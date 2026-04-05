@@ -4,10 +4,12 @@ A web application that transmutes source code into stylized **magic circles** â€
 
 ## Concept
 Code is already structured, hierarchical, and symbolic. This grimoire reframes that structure as ritual geometry:
-- **Loops** become spirals and cyclic patterns.
-- **Conditionals** become binary, contrasting designs.
-- **Try / except / finally** become nested, layered wards.
-- **Classes and objects** become pentagrams and hexagrams.
+- **Structure** defines the foundational symmetry and segmentation of the circle.
+- **Control flow** becomes motion: pulses, loops, and branching paths that animate across the sigil.
+- **Complexity** influences density, layering, and spatial compression.
+- **Stability** affects continuity: clean arcs vs fractured or flickering lines.
+- **Dependencies** exert outward or inward pull, shaping the circleâ€™s overall cohesion.
+- **Recursion and self-reference** generate fractal or self-similar structures.
 
 ## Architecture
 The project is a real-time React application that parses code in the browser:
