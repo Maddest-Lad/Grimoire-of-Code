@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    background: #080814;
+    color: #e2e8f0;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0e0820;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #4a2080;
+    border-radius: 2px;
+  }
+
+  select option {
+    background: #1a0a2e;
+  }
+}
