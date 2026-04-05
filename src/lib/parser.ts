@@ -19,7 +19,114 @@ function makeNode(type: NodeType, name: string, depth: number): IRNode {
     depth,
     isRecursive: false,
     lineCount: 0,
+    loopCount: 0,
+    branchCount: 0,
+    tryCount: 0,
+    returnCount: 0,
+    paramCount: 0,
+    nestingDepth: 0,
   };
+}
+
+// ─── Body analysis ────────────────────────────────────────────────────────────
+
+interface BodyAnalysis {
+  complexity: number;
+  loopCount: number;
+  branchCount: number;
+  tryCount: number;
+  returnCount: number;
+  nestingDepth: number;
+}
+
+function analyzeBody(body: string): BodyAnalysis {
+  const loopCount = Math.min(
+    (body.match(/\bfor\b/g)?.length ?? 0) +
+    (body.match(/\bwhile\b/g)?.length ?? 0) +
+    (body.match(/\bdo\b/g)?.length ?? 0),
+    6,
+  );
+  const branchCount = Math.min(
+    (body.match(/\bif\b/g)?.length ?? 0) +
+    (body.match(/\belse\b/g)?.length ?? 0) +
+    (body.match(/\bswitch\b/g)?.length ?? 0) +
+    (body.match(/\bcase\b/g)?.length ?? 0) +
+    (body.match(/\?\s*[^:?]/g)?.length ?? 0) +
+    (body.match(/&&/g)?.length ?? 0) +
+    (body.match(/\|\|/g)?.length ?? 0) +
+    (body.match(/\?\?/g)?.length ?? 0),
+    8,
+  );
+  const tryCount = body.match(/\btry\b/g)?.length ?? 0;
+  const returnCount = body.match(/\breturn\b/g)?.length ?? 0;
+
+  let depth = 0, maxDepth = 0;
+  for (const ch of body) {
+    if (ch === '{') { depth++; if (depth > maxDepth) maxDepth = depth; }
+    else if (ch === '}') depth--;
+  }
+
+  const complexity = Math.min(1 + loopCount + branchCount + tryCount, 20);
+  return { complexity, loopCount, branchCount, tryCount, returnCount, nestingDepth: maxDepth };
+}
+
+function analyzeBodyPython(body: string): BodyAnalysis {
+  const loopCount = Math.min(
+    (body.match(/\bfor\b/g)?.length ?? 0) +
+    (body.match(/\bwhile\b/g)?.length ?? 0),
+    6,
+  );
+  const branchCount = Math.min(
+    (body.match(/\bif\b/g)?.length ?? 0) +
+    (body.match(/\belif\b/g)?.length ?? 0) +
+    (body.match(/\belse\b/g)?.length ?? 0) +
+    (body.match(/\band\b/g)?.length ?? 0) +
+    (body.match(/\bor\b/g)?.length ?? 0),
+    8,
+  );
+  const tryCount = body.match(/\btry\b/g)?.length ?? 0;
+  const returnCount = body.match(/\breturn\b/g)?.length ?? 0;
+
+  const lines = body.split('\n').filter((l) => l.trim());
+  let maxIndent = 0;
+  for (const line of lines) {
+    const indent = line.length - line.trimStart().length;
+    if (indent > maxIndent) maxIndent = indent;
+  }
+
+  const complexity = Math.min(1 + loopCount + branchCount + tryCount, 20);
+  return { complexity, loopCount, branchCount, tryCount, returnCount, nestingDepth: Math.round(maxIndent / 4) };
+}
+
+function applyAnalysis(node: IRNode, analysis: BodyAnalysis): void {
+  node.complexity = analysis.complexity;
+  node.loopCount = analysis.loopCount;
+  node.branchCount = analysis.branchCount;
+  node.tryCount = analysis.tryCount;
+  node.returnCount = analysis.returnCount;
+  node.nestingDepth = analysis.nestingDepth;
+}
+
+// ─── Parameter count ──────────────────────────────────────────────────────────
+
+function extractParamCount(line: string): number {
+  const start = line.indexOf('(');
+  if (start === -1) return 0;
+  let depth = 0, end = -1;
+  for (let i = start; i < line.length; i++) {
+    if (line[i] === '(') depth++;
+    else if (line[i] === ')') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) return 0;
+  const inner = line.slice(start + 1, end).trim();
+  if (!inner) return 0;
+  let d = 0, count = 1;
+  for (const ch of inner) {
+    if (ch === '(' || ch === '[' || ch === '<') d++;
+    else if (ch === ')' || ch === ']' || ch === '>') d--;
+    else if (ch === ',' && d === 0) count++;
+  }
+  return Math.min(count, 6);
 }
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
@@ -36,21 +143,13 @@ function braceDelta(line: string): number {
       if (ch === strChar && noComment[i - 1] !== '\\') inStr = false;
       continue;
     }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      inStr = true;
-      strChar = ch;
-      continue;
-    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; continue; }
     if (ch === '{') count++;
     else if (ch === '}') count--;
   }
   return count;
 }
 
-/**
- * Extracts the brace-delimited block starting at startLine.
- * Returns the full content (including the start line) and the end line index.
- */
 function extractBlock(
   lines: string[],
   startLine: number,
@@ -68,7 +167,7 @@ function extractBlock(
   return null;
 }
 
-// ─── JS/TS keyword exclusions for call detection ─────────────────────────────
+// ─── JS/TS keyword exclusions ─────────────────────────────────────────────────
 
 const JS_KEYWORDS = new Set([
   'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue',
@@ -81,52 +180,23 @@ const JS_KEYWORDS = new Set([
   'Error', 'Map', 'Set', 'Symbol', 'Date', 'RegExp',
   'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
   'fetch', 'URL', 'URLSearchParams', 'parseInt', 'parseFloat', 'isNaN',
-  'encodeURIComponent', 'decodeURIComponent',
 ]);
 
-/** Finds calls to known names within a body string. */
 function detectCalls(body: string, knownNames: Set<string>): string[] {
   const calls = new Set<string>();
-  // Match identifier( not preceded by . or word character
   const pat = /(?<![.\w])([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
   let m: RegExpExecArray | null;
   while ((m = pat.exec(body)) !== null) {
     const name = m[1];
-    if (knownNames.has(name) && !JS_KEYWORDS.has(name)) {
-      calls.add(name);
-    }
+    if (knownNames.has(name) && !JS_KEYWORDS.has(name)) calls.add(name);
   }
   return Array.from(calls);
-}
-
-function countComplexity(body: string): number {
-  const patterns = [
-    /\bif\b/g,
-    /\belse\b/g,
-    /\bfor\b/g,
-    /\bwhile\b/g,
-    /\bswitch\b/g,
-    /\bcase\b/g,
-    /\bcatch\b/g,
-    /\?\s*[^:?]/g,
-    /&&/g,
-    /\|\|/g,
-    /\?\?/g,
-  ];
-  let total = 1;
-  for (const pat of patterns) {
-    total += (body.match(pat) ?? []).length;
-  }
-  return Math.min(total, 20);
 }
 
 function detectRecursion(nodes: IRNode[]): void {
   const nameToNode = new Map(nodes.map((n) => [n.name, n]));
   for (const node of nodes) {
-    if (node.calls.includes(node.name)) {
-      node.isRecursive = true;
-    }
-    // Mutual recursion
+    if (node.calls.includes(node.name)) node.isRecursive = true;
     for (const callName of node.calls) {
       const callee = nameToNode.get(callName);
       if (callee?.calls.includes(node.name)) {
@@ -142,7 +212,6 @@ function detectRecursion(nodes: IRNode[]): void {
 function parseClassMethods(classBody: string, classNode: IRNode): void {
   const lines = classBody.split('\n');
   const constructorPat = /^\s{2,}constructor\s*\(/;
-  // Matches method definitions indented at least 2 spaces
   const methodPat =
     /^\s{2,}(?:(?:static|async|get|set|public|private|protected|override|abstract|readonly)\s+)*(?:async\s+)?([#a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/;
 
@@ -151,8 +220,9 @@ function parseClassMethods(classBody: string, classNode: IRNode): void {
 
     if (constructorPat.test(line)) {
       const method = makeNode('method', 'constructor', classNode.depth + 1);
-      const body = lines.slice(i).join('\n').slice(0, 800);
-      method.complexity = countComplexity(body);
+      const bodySlice = lines.slice(i).join('\n').slice(0, 800);
+      applyAnalysis(method, analyzeBody(bodySlice));
+      method.paramCount = extractParamCount(line);
       classNode.children.push(method);
       continue;
     }
@@ -160,8 +230,9 @@ function parseClassMethods(classBody: string, classNode: IRNode): void {
     const m = line.match(methodPat);
     if (m && m[1] !== 'constructor') {
       const method = makeNode('method', m[1], classNode.depth + 1);
-      const body = lines.slice(i).join('\n').slice(0, 800);
-      method.complexity = countComplexity(body);
+      const bodySlice = lines.slice(i).join('\n').slice(0, 800);
+      applyAnalysis(method, analyzeBody(bodySlice));
+      method.paramCount = extractParamCount(line);
       classNode.children.push(method);
     }
   }
@@ -169,7 +240,6 @@ function parseClassMethods(classBody: string, classNode: IRNode): void {
 
 // ─── JavaScript / TypeScript parser ──────────────────────────────────────────
 
-// Temp storage for bodies — cleaned up after second pass
 type IRNodeWithBody = IRNode & { _body?: string };
 
 function parseJS(code: string): IRNode {
@@ -180,7 +250,6 @@ function parseJS(code: string): IRNode {
   const lines = code.split('\n');
   const topLevelNames = new Set<string>();
   const topLevelNodes: IRNodeWithBody[] = [];
-
   let skipUntilLine = -1;
 
   for (let i = 0; i < lines.length; i++) {
@@ -188,8 +257,6 @@ function parseJS(code: string): IRNode {
 
     const line = lines[i];
     const trimmed = line.trim();
-
-    // Only top-level: no leading whitespace
     if (!trimmed || line[0] === ' ' || line[0] === '\t') continue;
     if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
 
@@ -198,9 +265,7 @@ function parseJS(code: string): IRNode {
       /^import\s+(?:type\s+)?(?:.+?\s+from\s+)?['"]([^'"]+)['"]/,
     );
     if (importMatch) {
-      const node = makeNode('import', importMatch[1], 1);
-      root.children.push(node);
-      topLevelNodes.push(node);
+      root.children.push(makeNode('import', importMatch[1], 1));
       continue;
     }
 
@@ -209,9 +274,7 @@ function parseJS(code: string): IRNode {
       /^(?:const|let|var)\s+(?:\{[^}]+\}|\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/,
     );
     if (requireMatch) {
-      const node = makeNode('import', requireMatch[1], 1);
-      root.children.push(node);
-      topLevelNodes.push(node);
+      root.children.push(makeNode('import', requireMatch[1], 1));
       continue;
     }
 
@@ -221,9 +284,9 @@ function parseJS(code: string): IRNode {
     );
     if (classMatch) {
       const node = makeNode('class', classMatch[1], 1);
-      root.children.push(node);
       topLevelNames.add(classMatch[1]);
       topLevelNodes.push(node);
+      root.children.push(node);
       const block = extractBlock(lines, i);
       if (block) {
         parseClassMethods(block.content, node);
@@ -239,19 +302,20 @@ function parseJS(code: string): IRNode {
     );
     if (funcMatch) {
       const node: IRNodeWithBody = makeNode('function', funcMatch[1], 1);
-      root.children.push(node);
       topLevelNames.add(funcMatch[1]);
       topLevelNodes.push(node);
+      root.children.push(node);
       const block = extractBlock(lines, i);
       if (block) {
-        node.complexity = countComplexity(block.content);
+        applyAnalysis(node, analyzeBody(block.content));
+        node.paramCount = extractParamCount(trimmed);
         node._body = block.content;
         skipUntilLine = block.endLine;
       }
       continue;
     }
 
-    // Arrow function / function expression assignment
+    // Arrow / function-expression assignment
     const arrowMatch = trimmed.match(
       /^(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[a-zA-Z_$]\w*)\s*=>/,
     );
@@ -263,12 +327,13 @@ function parseJS(code: string): IRNode {
     const fnMatch = arrowMatch ?? fnExprMatch;
     if (fnMatch) {
       const node: IRNodeWithBody = makeNode('function', fnMatch[1], 1);
-      root.children.push(node);
       topLevelNames.add(fnMatch[1]);
       topLevelNodes.push(node);
+      root.children.push(node);
       const block = extractBlock(lines, i);
       if (block) {
-        node.complexity = countComplexity(block.content);
+        applyAnalysis(node, analyzeBody(block.content));
+        node.paramCount = extractParamCount(trimmed);
         node._body = block.content;
         skipUntilLine = block.endLine;
       }
@@ -281,21 +346,19 @@ function parseJS(code: string): IRNode {
     );
     if (varMatch && !trimmed.includes('=>') && !trimmed.includes('function')) {
       const node = makeNode('variable', varMatch[1], 1);
-      root.children.push(node);
       topLevelNodes.push(node);
+      root.children.push(node);
     }
   }
 
-  // Second pass: resolve calls for function nodes
+  // Second pass: resolve calls
   for (const node of topLevelNodes) {
     if (node._body) {
       node.calls = detectCalls(node._body, topLevelNames);
       delete node._body;
     }
   }
-
   detectRecursion(topLevelNodes.filter((n) => n.type === 'function'));
-
   return root;
 }
 
@@ -309,19 +372,8 @@ const PYTHON_KEYWORDS = new Set([
   'print', 'len', 'range', 'list', 'dict', 'set', 'tuple', 'str', 'int',
   'float', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr',
   'callable', 'super', 'object', 'enumerate', 'zip', 'map', 'filter',
-  'sorted', 'reversed', 'sum', 'min', 'max', 'abs', 'round',
-  'open', 'input', 'repr', 'format', 'id', 'hash',
+  'sorted', 'reversed', 'sum', 'min', 'max', 'abs', 'round', 'open', 'input',
 ]);
-
-function countPythonComplexity(body: string): number {
-  const patterns = [
-    /\bif\b/g, /\belif\b/g, /\belse\b/g, /\bfor\b/g, /\bwhile\b/g,
-    /\btry\b/g, /\bexcept\b/g, /\band\b/g, /\bor\b/g,
-  ];
-  let total = 1;
-  for (const pat of patterns) total += (body.match(pat) ?? []).length;
-  return Math.min(total, 20);
-}
 
 function parsePython(code: string): IRNode {
   _idCounter = 0;
@@ -360,21 +412,20 @@ function parsePython(code: string): IRNode {
       const name = defMatch[1];
       const nodeType: NodeType = parent.type === 'class' ? 'method' : 'function';
       const node = makeNode(nodeType, name, parent.depth + 1);
+      node.paramCount = extractParamCount(trimmed);
       parent.children.push(node);
       if (indent === 0) topLevelNames.add(name);
       stack.push({ node, indent });
 
-      // Collect body
       const bodyLines: string[] = [];
       for (let j = i + 1; j < lines.length; j++) {
         const bl = lines[j];
         if (!bl.trim()) { bodyLines.push(bl); continue; }
-        const bi = bl.length - bl.trimStart().length;
-        if (bi <= indent) break;
+        if ((bl.length - bl.trimStart().length) <= indent) break;
         bodyLines.push(bl);
       }
       const body = bodyLines.join('\n');
-      node.complexity = countPythonComplexity(body);
+      applyAnalysis(node, analyzeBodyPython(body));
       if (indent === 0) functionBodies.set(name, body);
       continue;
     }
@@ -399,8 +450,7 @@ function parsePython(code: string): IRNode {
     const calls = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = pat.exec(body)) !== null) {
-      const name = m[1];
-      if (topLevelNames.has(name) && !PYTHON_KEYWORDS.has(name)) calls.add(name);
+      if (topLevelNames.has(m[1]) && !PYTHON_KEYWORDS.has(m[1])) calls.add(m[1]);
     }
     node.calls = Array.from(calls);
   }
@@ -417,10 +467,9 @@ function parseGeneric(code: string): IRNode {
   root.lineCount = code.split('\n').length;
 
   const funcPatterns = [
-    /^(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z_]\w*)/, // Rust
-    /^func\s+([a-zA-Z_]\w*)/, // Go
-    /^def\s+([a-zA-Z_]\w*)/, // Ruby / generic
-    /^(?:public|private|protected|static|\s)*(?:\w+\s+)+([a-zA-Z_]\w*)\s*\([^)]*\)\s*(?:throws\s+\w+\s*)?\{/, // Java/C++
+    /^(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z_]\w*)/,
+    /^func\s+([a-zA-Z_]\w*)/,
+    /^def\s+([a-zA-Z_]\w*)/,
   ];
 
   for (const line of code.split('\n')) {
@@ -428,7 +477,9 @@ function parseGeneric(code: string): IRNode {
     for (const pat of funcPatterns) {
       const m = trimmed.match(pat);
       if (m?.[1]) {
-        root.children.push(makeNode('function', m[1], 1));
+        const node = makeNode('function', m[1], 1);
+        node.paramCount = extractParamCount(trimmed);
+        root.children.push(node);
         break;
       }
     }
@@ -456,7 +507,6 @@ export function parseCode(code: string, language: Language): IRNode {
     empty.lineCount = 0;
     return empty;
   }
-
   switch (language) {
     case 'javascript':
     case 'typescript':

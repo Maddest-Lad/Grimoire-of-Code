@@ -47,18 +47,12 @@ function LanguageSelector({ selected, detected, onChange }: LangSelectorProps) {
         value={selected}
         onChange={(e) => onChange(e.target.value as Language | 'auto')}
         className="text-xs font-mono rounded px-2 py-1 outline-none cursor-pointer"
-        style={{
-          background: '#1a0a2e',
-          border: '1px solid #4a2080',
-          color: '#c8b8e8',
-        }}
+        style={{ background: '#1a0a2e', border: '1px solid #4a2080', color: '#c8b8e8' }}
         onFocus={(e) => (e.currentTarget.style.borderColor = '#7c3aed')}
-        onBlur={(e) => (e.currentTarget.style.borderColor = '#4a2080')}
+        onBlur={(e)  => (e.currentTarget.style.borderColor = '#4a2080')}
       >
         {LANGUAGES.map((l) => (
-          <option key={l.value} value={l.value}>
-            {l.label}
-          </option>
+          <option key={l.value} value={l.value}>{l.label}</option>
         ))}
       </select>
     </div>
@@ -80,10 +74,13 @@ export default function App() {
     return parseCode(code, effectiveLanguage);
   }, [code, effectiveLanguage]);
 
-  const layout = useMemo(() => {
+  const layoutResult = useMemo(() => {
     if (!ir) return null;
     return computeLayout(ir);
   }, [ir]);
+
+  const layout  = layoutResult?.root   ?? null;
+  const metrics = layoutResult?.metrics ?? null;
 
   const nodeCount = useMemo(() => (ir ? countNodes(ir) - 1 : 0), [ir]);
 
@@ -92,12 +89,11 @@ export default function App() {
       className="flex h-full w-full overflow-hidden"
       style={{ background: '#080814', color: '#e2e8f0' }}
     >
-      {/* ── Left pane: editor ──────────────────────────────────── */}
+      {/* ── Left pane: editor ──────────────────────────────── */}
       <div
         className="flex flex-col"
         style={{ width: '42%', borderRight: '1px solid #2d1254' }}
       >
-        {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-2 shrink-0"
           style={{ background: '#0d0820', borderBottom: '1px solid #2d1254' }}
@@ -111,29 +107,27 @@ export default function App() {
             onChange={setSelectedLanguage}
           />
         </div>
-
-        {/* Monaco */}
         <div className="flex-1 min-h-0">
           <Editor code={code} language={effectiveLanguage} onChange={setCode} />
         </div>
       </div>
 
-      {/* ── Right pane: visualization ──────────────────────────── */}
+      {/* ── Right pane: visualization ──────────────────────── */}
       <div className="flex flex-col" style={{ flex: 1 }}>
-        {/* Header */}
         <div
           className="flex items-center gap-3 px-4 py-2 shrink-0"
           style={{ background: '#0d0820', borderBottom: '1px solid #2d1254' }}
         >
           {ir && ir.lineCount > 0 ? (
             <>
-              <Stat label="nodes" value={nodeCount} />
-              <Stat label="lines" value={ir.lineCount} />
-              {layout && layout.children.length > 0 && (
-                <Stat label="edges" value={
-                  layout.children.reduce((sum, n) => sum + n.calls.length, 0)
-                } />
-              )}
+              <Stat label="nodes"    value={nodeCount} />
+              <Stat label="lines"    value={ir.lineCount} />
+              {metrics && metrics.totalLoops > 0 &&
+                <Stat label="loops"    value={metrics.totalLoops} />}
+              {metrics && metrics.totalBranches > 0 &&
+                <Stat label="branches" value={metrics.totalBranches} />}
+              {metrics && metrics.totalTries > 0 &&
+                <Stat label="try"      value={metrics.totalTries} />}
             </>
           ) : (
             <span className="font-mono text-xs" style={{ color: '#3d2860' }}>
@@ -141,10 +135,8 @@ export default function App() {
             </span>
           )}
         </div>
-
-        {/* Magic Circle */}
         <div className="flex-1 min-h-0">
-          <MagicCircle layout={layout} />
+          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} />
         </div>
       </div>
     </div>
