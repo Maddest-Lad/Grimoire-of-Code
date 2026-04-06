@@ -33,7 +33,7 @@ export function RuneBand({
   return (
     <motion.g
       // transformBox: view-box ensures transformOrigin uses SVG user-unit coordinates
-      style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+      style={{ transformBox: 'view-box', transformOrigin: `${CX}px ${CY}px` }}
       animate={{ rotate: direction * 360 }}
       transition={{ duration, repeat: Infinity, ease: 'linear' }}
     >

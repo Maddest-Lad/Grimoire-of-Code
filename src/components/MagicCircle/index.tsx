@@ -38,7 +38,7 @@ export function MagicCircle({ layout, metrics, language }: MagicCircleProps) {
     >
       <svg
         viewBox="0 0 600 600"
-        style={{ width: '100%', height: '100%', maxWidth: 600, maxHeight: 600 }}
+        style={{ width: '100%', height: '100%' }}
       >
         {/* ── Shared definitions ──────────────────────────────── */}
         <defs>
