@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { makePolygonPoints, pointsToPath, makeStarPath, CX, CY } from './constants';
 import type { Language } from '../../types/ir';
 
@@ -38,18 +37,17 @@ export function CenterSigil({ topLevelCount, totalComplexity, language }: Props)
   return (
     <g>
       {/* ── Layer 1: Outer polygon + star (breathes) ─────────── */}
-      <motion.g
-        animate={{ opacity: [0.5, 0.9, 0.5] }}
-        transition={{ duration: pulsePeriod, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <path d={outerPoly} fill="none" stroke="#6030a0" strokeWidth={0.8} opacity={0.7} />
+      <g opacity={0.7}>
+        <animate attributeName="opacity" values="0.5;0.9;0.5"
+          dur={`${pulsePeriod}s`} repeatCount="indefinite" />
+        <path d={outerPoly} fill="none" stroke="#6030a0" strokeWidth={0.8} />
         {outerN >= 5 && (
-          <path d={outerStar} fill="none" stroke="#8a44c8" strokeWidth={0.65} opacity={0.55} />
+          <path d={outerStar} fill="none" stroke="#8a44c8" strokeWidth={0.65} opacity={0.8} />
         )}
         {outerPts.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#c084fc" opacity={0.85} />
+          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#c084fc" />
         ))}
-      </motion.g>
+      </g>
 
       {/* ── Layer 2: Middle rings ─────────────────────────────── */}
       <circle cx={CX} cy={CY} r={44} fill="none" stroke="#5030a0" strokeWidth={1} opacity={0.55} />

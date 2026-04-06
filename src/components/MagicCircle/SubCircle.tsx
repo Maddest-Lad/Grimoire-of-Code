@@ -93,14 +93,15 @@ function TryGeometry({ cx, cy, r }: { cx: number; cy: number; r: number }) {
 
   return (
     <>
-      {/* Fragmented inner ring */}
-      <motion.circle
+      {/* Fragmented inner ring — native SVG animate */}
+      <circle
         cx={cx} cy={cy} r={innerR}
         fill="none" stroke="#ef4444" strokeWidth={0.7}
         strokeDasharray={`${circumference / 6} ${circumference / 10}`}
-        animate={{ opacity: [0.3, 0.6, 0.2, 0.5, 0.3] }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }}
-      />
+        opacity={0.4}>
+        <animate attributeName="opacity" values="0.3;0.6;0.2;0.5;0.3"
+          dur="2.4s" repeatCount="indefinite" />
+      </circle>
       {/* Zigzag fracture */}
       <path
         d={`M ${cx - r * 0.3} ${cy} L ${cx - r * 0.12} ${cy - 2} L ${cx + r * 0.12} ${cy + 2} L ${cx + r * 0.3} ${cy}`}

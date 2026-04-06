@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { LaidOutNode, ModuleMetrics, Language, SubCircle, InscribedShape, SatelliteCircle } from '../../types/ir';
 import { BANDS } from '../../lib/layout';
 import { generateSemanticBand } from '../../lib/runes';
@@ -78,6 +78,12 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
       >
         {/* ── Shared definitions ──────────────────────────────── */}
         <defs>
+          <style>{`
+            @keyframes nodeEntry {
+              from { opacity: 0; transform: scale(0); }
+              to { opacity: 1; transform: scale(1); }
+            }
+          `}</style>
           <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
             <feMerge>
@@ -214,17 +220,15 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
         <SatelliteCircleLayer satellites={satelliteCircles} />
 
         {/* ── Layer 9: Satellite node chips ───────────────────── */}
-        <AnimatePresence>
-          {allNodes.map((node, i) => (
-            <NodeChip
-              key={node.id}
-              node={node}
-              index={i}
-              suppressedDecorations={suppressedDecorations}
-              showLabels={showLabels}
-            />
-          ))}
-        </AnimatePresence>
+        {allNodes.map((node, i) => (
+          <NodeChip
+            key={node.id}
+            node={node}
+            index={i}
+            suppressedDecorations={suppressedDecorations}
+            showLabels={showLabels}
+          />
+        ))}
 
         {/* ── Layer 10: Center sigil (always on top) ──────────── */}
         <CenterSigil

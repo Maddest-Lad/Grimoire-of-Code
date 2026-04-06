@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, memo } from 'react';
 import type { LaidOutNode } from '../../types/ir';
 import { NODE_COLORS, CX, CY, classifyImport, importColor } from './constants';
 import { LoopArcs } from './LoopArcs';
@@ -108,8 +107,7 @@ function MethodGlyph({ nx, ny, r, colors, node }: {
       <polygon
         points={`${nx},${ny - r} ${nx + r},${ny} ${nx},${ny + r} ${nx - r},${ny}`}
         fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
-        filter="url(#glow)"
-      />
+              />
       {hasDetail && (
         <g opacity={detailOpacity}>
           <InternalRings nx={nx} ny={ny} r={r * 0.7} count={node.loopCount} />
@@ -171,8 +169,7 @@ function ImportGlyph({ nx, ny, r, name }: {
     return (
       <polygon
         points={`${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`}
-        fill={fill} stroke={color} strokeWidth={1.2} filter="url(#glow)"
-      />
+        fill={fill} stroke={color} strokeWidth={1.2}       />
     );
   }
 
@@ -185,8 +182,7 @@ function ImportGlyph({ nx, ny, r, name }: {
     return (
       <polygon
         points={pts.join(' ')}
-        fill={fill} stroke={color} strokeWidth={1.3} filter="url(#glow)"
-      />
+        fill={fill} stroke={color} strokeWidth={1.3}       />
     );
   }
 
@@ -197,8 +193,7 @@ function ImportGlyph({ nx, ny, r, name }: {
       <rect
         x={nx - half} y={ny - half} width={half * 2} height={half * 2}
         rx={3} ry={3}
-        fill={fill} stroke={color} strokeWidth={1.3} filter="url(#glow)"
-      />
+        fill={fill} stroke={color} strokeWidth={1.3}       />
     );
   }
 
@@ -209,8 +204,7 @@ function ImportGlyph({ nx, ny, r, name }: {
   return (
     <polygon
       points={`${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`}
-      fill={fill} stroke={color} strokeWidth={1.5} filter="url(#glow)"
-    />
+      fill={fill} stroke={color} strokeWidth={1.5}     />
   );
 }
 
@@ -316,7 +310,7 @@ interface Props {
   showLabels?: boolean;
 }
 
-export function NodeChip({ node, index, suppressedDecorations, showLabels = true }: Props) {
+export const NodeChip = memo(function NodeChip({ node, index, suppressedDecorations, showLabels = true }: Props) {
   const [hovered, setHovered] = useState(false);
   const colors = NODE_COLORS[node.type];
   const { x: nx, y: ny } = node;
@@ -328,18 +322,12 @@ export function NodeChip({ node, index, suppressedDecorations, showLabels = true
 
   const labelVisible = showLabels || hovered;
 
+  // CSS animation delay for staggered entry (replaces Framer Motion spring)
+  const delay = `${index * 0.04 + 0.5}s`;
+
   return (
-    <motion.g
-      style={{ transformBox: 'view-box', transformOrigin: `${nx}px ${ny}px`, cursor: 'pointer' }}
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0, opacity: 0 }}
-      transition={{
-        type: 'spring',
-        stiffness: 220,
-        damping: 18,
-        delay: index * 0.04 + 0.5,
-      }}
+    <g
+      style={{ cursor: 'pointer', animation: `nodeEntry 0.4s ease-out ${delay} both` }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -405,6 +393,6 @@ export function NodeChip({ node, index, suppressedDecorations, showLabels = true
       {!showLabels && (
         <circle cx={nx} cy={ny} r={Math.max(r + 6, 12)} fill="transparent" />
       )}
-    </motion.g>
+    </g>
   );
-}
+});

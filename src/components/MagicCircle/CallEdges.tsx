@@ -1,4 +1,3 @@
-import { motion, AnimatePresence } from 'framer-motion';
 import type { Edge, NexusPoint } from './constants';
 
 interface Props {
@@ -8,43 +7,38 @@ interface Props {
 
 export function CallEdges({ edges, nexusPoints }: Props) {
   return (
-    <AnimatePresence>
+    <g>
       {edges.map((edge, i) => {
         const baseDur = 2.2 + (i % 4) * 0.45;
-        // Scale stroke width by importance
         const strokeW = Math.min(0.8 + edge.importance * 0.4, 2.5);
-        // More important edges get more particles
         const particleCount = edge.importance >= 3 ? 3 : edge.importance >= 2 ? 2 : 1;
+        const opacity = 0.5 + edge.importance * 0.08;
+        const delay = `${1.4 + i * 0.12}s`;
 
         return (
           <g key={edge.id}>
-            {/* Draw-in bezier/arc on mount */}
-            <motion.path
+            {/* Main edge path — static with fade-in via CSS */}
+            <path
               d={edge.path}
               fill="none"
               stroke="#c084fc"
               strokeWidth={strokeW}
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.5 + edge.importance * 0.08 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 1.2, delay: 1.4 + i * 0.12 }}
+              opacity={opacity}
+              style={{ animation: `nodeEntry 1.2s ease-out ${delay} both` }}
             />
 
             {/* Faint glow underlay for important edges */}
             {edge.importance >= 2 && (
-              <motion.path
+              <path
                 d={edge.path}
                 fill="none"
                 stroke="#c084fc"
                 strokeWidth={strokeW + 2}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.08 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 1.5, delay: 1.4 + i * 0.12 }}
+                opacity={0.08}
               />
             )}
 
-            {/* Traveling light particles */}
+            {/* Traveling light particles — native SVG animateMotion */}
             {Array.from({ length: particleCount }, (_, p) => {
               const dur = baseDur + p * 0.7;
               const r = edge.importance >= 2 ? 3 : 2.5;
@@ -63,29 +57,19 @@ export function CallEdges({ edges, nexusPoints }: Props) {
         );
       })}
 
-      {/* Nexus points — pulsing bright dots at heavily-targeted nodes */}
+      {/* Nexus points — native SVG animate for pulsing */}
       {nexusPoints.map((np, i) => (
         <g key={`nexus-${i}`}>
-          {/* Glow halo */}
-          <motion.circle
-            cx={np.x} cy={np.y}
-            r={6 + np.incomingCount}
-            fill="none"
-            stroke="#c084fc"
-            strokeWidth={0.5}
-            animate={{ opacity: [0.1, 0.3, 0.1], r: [5 + np.incomingCount, 7 + np.incomingCount, 5 + np.incomingCount] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          {/* Core bright dot */}
-          <motion.circle
-            cx={np.x} cy={np.y}
-            r={2.5}
-            fill="#e8c0ff"
-            animate={{ opacity: [0.5, 0.9, 0.5] }}
-            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
-          />
+          <circle cx={np.x} cy={np.y} r={6 + np.incomingCount}
+            fill="none" stroke="#c084fc" strokeWidth={0.5} opacity={0.2}>
+            <animate attributeName="opacity" values="0.1;0.3;0.1" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={np.x} cy={np.y} r={2.5} fill="#e8c0ff" opacity={0.7}>
+            <animate attributeName="opacity" values="0.5;0.9;0.5"
+              dur="1.5s" begin={`${i * 0.3}s`} repeatCount="indefinite" />
+          </circle>
         </g>
       ))}
-    </AnimatePresence>
+    </g>
   );
 }

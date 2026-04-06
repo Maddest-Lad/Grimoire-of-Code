@@ -77,13 +77,14 @@ function SatTryGeometry({ cx, cy, r }: { cx: number; cy: number; r: number }) {
 
   return (
     <>
-      <motion.circle
+      <circle
         cx={cx} cy={cy} r={innerR}
         fill="none" stroke="#ef4444" strokeWidth={0.8}
         strokeDasharray={`${circumference / 5} ${circumference / 8}`}
-        animate={{ opacity: [0.25, 0.55, 0.2, 0.45, 0.25] }}
-        transition={{ duration: 2.8, repeat: Infinity, ease: 'linear' }}
-      />
+        opacity={0.35}>
+        <animate attributeName="opacity" values="0.25;0.55;0.2;0.45;0.25"
+          dur="2.8s" repeatCount="indefinite" />
+      </circle>
       <path
         d={`M ${cx - r * 0.25} ${cy} L ${cx - r * 0.1} ${cy - 2.5} L ${cx + r * 0.1} ${cy + 2.5} L ${cx + r * 0.25} ${cy}`}
         fill="none" stroke="#ef4444" strokeWidth={0.9} opacity={0.55}
