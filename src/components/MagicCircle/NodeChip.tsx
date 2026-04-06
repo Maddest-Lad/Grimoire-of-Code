@@ -206,9 +206,6 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
   const suppressBranch = suppressedDecorations?.has(`${node.id}:branch`);
   const suppressTry    = suppressedDecorations?.has(`${node.id}:try`);
 
-  const pulsePeriod = Math.max(1.4, 5.5 - node.complexity * 0.18);
-  const pulseScale  = 1 + Math.min(node.complexity * 0.015, 0.12);
-
   return (
     <motion.g
       style={{ transformBox: 'view-box', transformOrigin: `${nx}px ${ny}px` }}
@@ -283,23 +280,6 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
       {/* ── Param dots (below) ── */}
       <ParamDots nx={nx} ny={ny} r={r} count={node.paramCount} />
 
-      {/* ── Complexity pulse ring ── */}
-      {node.complexity > 2 && (
-        <motion.circle
-          cx={nx} cy={ny} r={r + 2}
-          fill="none"
-          stroke={colors.stroke}
-          strokeWidth={0.4}
-          style={{ transformBox: 'view-box', transformOrigin: `${nx}px ${ny}px` }}
-          animate={{ scale: [1, pulseScale * 1.6, 1], opacity: [0, 0.35, 0] }}
-          transition={{
-            duration: pulsePeriod,
-            repeat: Infinity,
-            ease: 'easeOut',
-            repeatDelay: 0.4,
-          }}
-        />
-      )}
 
       {/* ── Label ── */}
       <NodeLabel node={node} nx={nx} ny={ny} r={r} />
