@@ -1,12 +1,13 @@
-import type { IRNode, LaidOutNode, ModuleMetrics, SubCircle } from '../types/ir';
+import type { IRNode, LaidOutNode, ModuleMetrics, SubCircle, InscribedShape, SatelliteCircle } from '../types/ir';
 
-export const CANVAS = { cx: 300, cy: 300, size: 600 };
+export const CANVAS = { cx: 450, cy: 450, size: 900 };
 
 /** All radial band positions in SVG user units */
 export const BANDS = {
   center:      { inner: 0,   outer: 55  },
   radialBurst: { inner: 57,  outer: 108 },
   starPolygon: { inner: 112, outer: 162 },
+  callRouting: { radius: 145 },
   innerRune:   { inner: 174, outer: 188 },
   nodeOrbit:   { radius: 195 },
   stability:   { radius: 240 },
@@ -39,7 +40,9 @@ function buildNameToIdMap(ir: IRNode): Map<string, string> {
 /** Aggregate module-level metrics from the IR tree */
 export function computeMetrics(ir: IRNode): ModuleMetrics {
   let totalLoops = 0, totalBranches = 0, totalTries = 0, totalComplexity = 0;
+  let hasRecursion = false;
   const identifiers: string[] = [];
+  const typesPresent = new Set<string>();
 
   function walk(node: IRNode) {
     if (node.type !== 'module') {
@@ -48,6 +51,12 @@ export function computeMetrics(ir: IRNode): ModuleMetrics {
       totalTries += node.tryCount;
       totalComplexity += node.complexity;
       identifiers.push(node.name);
+      if (node.isRecursive) hasRecursion = true;
+      // Track which structural domains exist
+      if (node.type === 'import') typesPresent.add('import');
+      else if (node.type === 'class') typesPresent.add('class');
+      else if (node.type === 'function' || node.type === 'method') typesPresent.add('function');
+      else if (node.type === 'variable') typesPresent.add('variable');
     }
     node.children.forEach(walk);
   }
@@ -60,7 +69,166 @@ export function computeMetrics(ir: IRNode): ModuleMetrics {
     totalComplexity,
     topLevelCount: ir.children.length,
     runeSeedString: identifiers.join(''),
+    domainCount: typesPresent.size,
+    hasRecursion,
   };
+}
+
+/** Determine which inscribed geometric shapes to render based on code characteristics */
+export function computeInscribedShapes(metrics: ModuleMetrics): InscribedShape[] {
+  const shapes: InscribedShape[] = [];
+  const band = BANDS.starPolygon;
+  const radii = [band.outer - 4, band.inner + (band.outer - band.inner) * 0.6, band.inner + 8];
+  let idx = 0;
+
+  // Triangle: significant branching
+  if (metrics.totalBranches >= 3) {
+    shapes.push({
+      type: 'triangle',
+      vertices: 3,
+      radius: radii[idx % radii.length],
+      rotationDuration: 70,
+      color: '#7c3aed',
+      opacity: 0.55,
+    });
+    idx++;
+  }
+
+  // Square: 4+ distinct structural domains
+  if (metrics.domainCount >= 4) {
+    shapes.push({
+      type: 'square',
+      vertices: 4,
+      radius: radii[idx % radii.length],
+      rotationDuration: 85,
+      color: '#6030a0',
+      opacity: 0.5,
+    });
+    idx++;
+  }
+
+  // Pentagon: high cyclomatic complexity
+  if (metrics.totalComplexity > 12) {
+    shapes.push({
+      type: 'pentagon',
+      vertices: 5,
+      radius: radii[idx % radii.length],
+      rotationDuration: 100,
+      color: '#5020a0',
+      opacity: 0.45,
+    });
+    idx++;
+  }
+
+  // Hexagram: recursion present (two counter-rotating triangles)
+  if (metrics.hasRecursion) {
+    const r = idx < radii.length ? radii[idx] : (band.inner + band.outer) / 2;
+    shapes.push({
+      type: 'hexagram',
+      vertices: 6,
+      radius: r,
+      rotationDuration: 60,
+      color: '#8a44c8',
+      opacity: 0.5,
+    });
+  }
+
+  // Fallback: if no shapes qualify, use the original topLevelCount polygon
+  if (shapes.length === 0) {
+    const n = Math.min(Math.max(metrics.topLevelCount, 3), 12);
+    shapes.push({
+      type: n === 3 ? 'triangle' : n === 4 ? 'square' : 'pentagon',
+      vertices: n,
+      radius: (band.inner + band.outer) / 2,
+      rotationDuration: 90,
+      color: '#5020a0',
+      opacity: 0.55,
+    });
+  }
+
+  return shapes;
+}
+
+// ─── Sector system ──────────────────────────────────────────────────────────
+
+export type SectorName = 'north' | 'east' | 'south' | 'west';
+
+export interface Sector {
+  name: SectorName;
+  label: string;
+  startAngle: number;  // radians, measured from top (-PI/2)
+  endAngle: number;
+}
+
+/** Base sector definitions (angles measured from -PI/2 = top, clockwise) */
+export const SECTOR_DEFS: Sector[] = [
+  { name: 'north', label: 'INVOCATIONS',    startAngle: -Math.PI / 4,          endAngle: Math.PI / 4 },
+  { name: 'east',  label: 'BINDINGS',       startAngle: Math.PI / 4,           endAngle: (3 * Math.PI) / 4 },
+  { name: 'south', label: 'FOUNDATION',     startAngle: (3 * Math.PI) / 4,    endAngle: (5 * Math.PI) / 4 },
+  { name: 'west',  label: 'INNER WORKINGS', startAngle: (5 * Math.PI) / 4,    endAngle: (7 * Math.PI) / 4 },
+];
+
+/** Map node type to its sector */
+function sectorForType(type: string): SectorName {
+  switch (type) {
+    case 'function': return 'north';
+    case 'import':   return 'east';
+    case 'variable':
+    case 'control':  return 'south';
+    case 'class':
+    case 'method':   return 'west';
+    default:         return 'north';
+  }
+}
+
+/** Assign depth-1 children to sectors and compute per-node angles */
+function assignSectorAngles(children: IRNode[]): number[] {
+  // Group children by sector
+  const groups: Map<SectorName, number[]> = new Map([
+    ['north', []], ['east', []], ['south', []], ['west', []],
+  ]);
+  for (let i = 0; i < children.length; i++) {
+    const sector = sectorForType(children[i].type);
+    groups.get(sector)!.push(i);
+  }
+
+  // Build effective sector ranges — empty sectors share their space with neighbors
+  const sectorOrder: SectorName[] = ['north', 'east', 'south', 'west'];
+  const occupied = sectorOrder.filter(s => groups.get(s)!.length > 0);
+
+  // If all in one sector or no sector system benefit, fall back to even distribution
+  if (occupied.length <= 1) {
+    return children.map((_, i) => -Math.PI / 2 + (i / children.length) * 2 * Math.PI);
+  }
+
+  const angles = new Array<number>(children.length);
+  const totalAngle = 2 * Math.PI;
+
+  // Distribute angle proportionally to node count per occupied sector
+  const totalNodes = children.length;
+  let currentAngle = -Math.PI / 2; // start from top
+
+  for (const sectorName of sectorOrder) {
+    const indices = groups.get(sectorName)!;
+    if (indices.length === 0) continue;
+
+    // Each sector gets angle proportional to its share of nodes, but at least PI/6 (30deg)
+    const share = Math.max(indices.length / totalNodes, 0.08);
+    const sectorSpan = share * totalAngle;
+
+    // Spread nodes within this sector's span with padding at edges
+    const padding = sectorSpan * 0.08;
+    const usableSpan = sectorSpan - padding * 2;
+
+    for (let j = 0; j < indices.length; j++) {
+      const t = indices.length === 1 ? 0.5 : j / (indices.length - 1);
+      angles[indices[j]] = currentAngle + padding + t * usableSpan;
+    }
+
+    currentAngle += sectorSpan;
+  }
+
+  return angles;
 }
 
 /**
@@ -86,10 +254,11 @@ function layoutChildren(
   const count = children.length;
 
   if (depth === 1) {
-    // Depth-1: spread evenly around the main orbit
+    // Depth-1: place in sector-aware positions around the main orbit
     const orbitR = BANDS.nodeOrbit.radius;
+    const sectorAngles = assignSectorAngles(children);
     return children.map((child, i) => {
-      const angle = -Math.PI / 2 + (i / count) * 2 * Math.PI;
+      const angle = sectorAngles[i];
       const x = CANVAS.cx + orbitR * Math.cos(angle);
       const y = CANVAS.cy + orbitR * Math.sin(angle);
 
@@ -262,10 +431,105 @@ function computeSubCircles(allNodes: LaidOutNode[]): SubCircle[] {
   return subCircles;
 }
 
+/** Check if a node's control flow should be promoted to a satellite circle */
+function shouldPromote(node: LaidOutNode, type: 'loop' | 'branch' | 'try'): boolean {
+  switch (type) {
+    case 'loop':
+      return node.nestingDepth >= 2 && (node.loopCount + node.branchCount >= 4);
+    case 'branch':
+      return node.branchCount >= 5;
+    case 'try':
+      return node.tryCount >= 2;
+  }
+}
+
+/** Compute satellite circles for promoted control flow blocks */
+function computeSatelliteCircles(allNodes: LaidOutNode[]): SatelliteCircle[] {
+  const satellites: SatelliteCircle[] = [];
+  const occupied: { x: number; y: number; r: number }[] = [];
+
+  // The main circle rim is at BANDS.rim.outer (292).
+  // Satellites are placed tangent to the rim: center = rim + gap + satelliteR.
+  const RIM = BANDS.rim.outer;
+  const GAP = 4; // small gap between rim and satellite edge
+
+  for (const node of allNodes) {
+    if (node.type === 'import' || node.type === 'variable' || node.type === 'module') continue;
+
+    const qualifying: { type: SatelliteCircle['type']; count: number }[] = [];
+    if (node.loopCount >= 1 && shouldPromote(node, 'loop'))
+      qualifying.push({ type: 'loop', count: node.loopCount });
+    if (node.branchCount >= 3 && shouldPromote(node, 'branch'))
+      qualifying.push({ type: 'branch', count: node.branchCount });
+    if (node.tryCount >= 1 && shouldPromote(node, 'try'))
+      qualifying.push({ type: 'try', count: node.tryCount });
+
+    if (qualifying.length === 0) continue;
+
+    const nodeAngle = Math.atan2(node.y - CANVAS.cy, node.x - CANVAS.cx);
+
+    const offsets = qualifying.length === 1
+      ? [0]
+      : qualifying.length === 2
+        ? [-0.25, 0.25]
+        : [-0.35, 0, 0.35];
+
+    for (let i = 0; i < qualifying.length; i++) {
+      const { type, count } = qualifying[i];
+      const satR = clamp(18 + count * 3, 20, 36);
+      const angle = nodeAngle + offsets[i];
+
+      // Tangent placement: satellite edge touches the rim
+      const dist = RIM + GAP + satR;
+      let bestCx = CANVAS.cx + dist * Math.cos(angle);
+      let bestCy = CANVAS.cy + dist * Math.sin(angle);
+
+      // Clamp to viewBox (0 to CANVAS.size)
+      const pad = satR + 4;
+      bestCx = clamp(bestCx, pad, CANVAS.size - pad);
+      bestCy = clamp(bestCy, pad, CANVAS.size - pad);
+
+      // Collision avoidance — nudge angle
+      for (let attempt = 0; attempt < 8; attempt++) {
+        let collision = false;
+        for (const oz of occupied) {
+          if (circlesOverlap(bestCx, bestCy, satR, oz.x, oz.y, oz.r, 5)) {
+            collision = true;
+            break;
+          }
+        }
+        if (!collision) break;
+        const nudge = (attempt + 1) * 0.2 * (attempt % 2 ? 1 : -1);
+        bestCx = clamp(CANVAS.cx + dist * Math.cos(angle + nudge), pad, CANVAS.size - pad);
+        bestCy = clamp(CANVAS.cy + dist * Math.sin(angle + nudge), pad, CANVAS.size - pad);
+      }
+
+      satellites.push({
+        type,
+        cx: bestCx,
+        cy: bestCy,
+        radius: satR,
+        count,
+        parentId: node.id,
+        angle,
+        parentComplexity: node.complexity,
+        parentX: node.x,
+        parentY: node.y,
+        runeSeed: `${node.name}-${type}-${count}`,
+      });
+      occupied.push({ x: bestCx, y: bestCy, r: satR });
+    }
+  }
+
+  return satellites;
+}
+
 export function computeLayout(ir: IRNode): {
   root: LaidOutNode;
   metrics: ModuleMetrics;
   subCircles: SubCircle[];
+  inscribedShapes: InscribedShape[];
+  satelliteCircles: SatelliteCircle[];
 } {
   const nameToId = buildNameToIdMap(ir);
   const metrics = computeMetrics(ir);
@@ -300,7 +564,13 @@ export function computeLayout(ir: IRNode): {
   }
   root.children.forEach(walk);
 
-  const subCircles = computeSubCircles(allNodes);
+  const satelliteCircles = computeSatelliteCircles(allNodes);
 
-  return { root, metrics, subCircles };
+  // Nodes that have promoted satellites should not also get regular sub-circles for the same type
+  const promotedKeys = new Set(satelliteCircles.map(s => `${s.parentId}:${s.type}`));
+  const subCircles = computeSubCircles(allNodes).filter(sc => !promotedKeys.has(`${sc.parentId}:${sc.type}`));
+
+  const inscribedShapes = computeInscribedShapes(metrics);
+
+  return { root, metrics, subCircles, inscribedShapes, satelliteCircles };
 }

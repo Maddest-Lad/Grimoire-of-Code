@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { motion } from 'framer-motion';
 import { moduleRunes } from '../../lib/runes';
 import { circlePathD, CX, CY } from './constants';
 
@@ -14,6 +13,8 @@ interface RuneBandProps {
   color?: string;
   opacity?: number;
   letterSpacing?: number;
+  /** Pre-computed semantic text — overrides seed-based generation when provided */
+  semanticText?: string;
 }
 
 export function RuneBand({
@@ -26,17 +27,19 @@ export function RuneBand({
   color = '#5030a0',
   opacity = 0.65,
   letterSpacing = 2,
+  semanticText,
 }: RuneBandProps) {
-  const text = useMemo(() => moduleRunes(seed || 'grimoire', 150), [seed]);
+  const text = useMemo(
+    () => semanticText || moduleRunes(seed || 'grimoire', 150),
+    [seed, semanticText],
+  );
   const d = useMemo(() => circlePathD(CX, CY, r), [r]);
 
+  const fromDeg = 0;
+  const toDeg = direction * 360;
+
   return (
-    <motion.g
-      // transformBox: view-box ensures transformOrigin uses SVG user-unit coordinates
-      style={{ transformBox: 'view-box', transformOrigin: `${CX}px ${CY}px` }}
-      animate={{ rotate: direction * 360 }}
-      transition={{ duration, repeat: Infinity, ease: 'linear' }}
-    >
+    <g>
       {/* Hidden circle path that the text follows */}
       <path id={pathId} d={d} fill="none" stroke="none" />
       <text
@@ -48,6 +51,15 @@ export function RuneBand({
       >
         <textPath href={`#${pathId}`}>{text}</textPath>
       </text>
-    </motion.g>
+      {/* Native SVG rotation — immune to viewBox changes */}
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from={`${fromDeg} ${CX} ${CY}`}
+        to={`${toDeg} ${CX} ${CY}`}
+        dur={`${duration}s`}
+        repeatCount="indefinite"
+      />
+    </g>
   );
 }

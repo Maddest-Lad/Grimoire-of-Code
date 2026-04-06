@@ -62,7 +62,7 @@ function LanguageSelector({ selected, detected, onChange }: LangSelectorProps) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { code, selectedLanguage, setCode, setSelectedLanguage } = useStore();
+  const { code, selectedLanguage, showLabels, setCode, setSelectedLanguage, setShowLabels } = useStore();
 
   const effectiveLanguage = useMemo<Language>(() => {
     if (selectedLanguage !== 'auto') return selectedLanguage;
@@ -79,9 +79,11 @@ export default function App() {
     return computeLayout(ir);
   }, [ir]);
 
-  const layout     = layoutResult?.root       ?? null;
-  const metrics    = layoutResult?.metrics    ?? null;
-  const subCircles = layoutResult?.subCircles ?? [];
+  const layout           = layoutResult?.root             ?? null;
+  const metrics          = layoutResult?.metrics          ?? null;
+  const subCircles       = layoutResult?.subCircles       ?? [];
+  const inscribedShapes  = layoutResult?.inscribedShapes  ?? [];
+  const satelliteCircles = layoutResult?.satelliteCircles ?? [];
 
   const nodeCount = useMemo(() => (ir ? countNodes(ir) - 1 : 0), [ir]);
 
@@ -116,28 +118,42 @@ export default function App() {
       {/* ── Right pane: visualization ──────────────────────── */}
       <div className="flex flex-col" style={{ flex: 1 }}>
         <div
-          className="flex items-center gap-3 px-4 py-2 shrink-0"
+          className="flex items-center justify-between px-4 py-2 shrink-0"
           style={{ background: '#0d0820', borderBottom: '1px solid #2d1254' }}
         >
-          {ir && ir.lineCount > 0 ? (
-            <>
-              <Stat label="nodes"    value={nodeCount} />
-              <Stat label="lines"    value={ir.lineCount} />
-              {metrics && metrics.totalLoops > 0 &&
-                <Stat label="loops"    value={metrics.totalLoops} />}
-              {metrics && metrics.totalBranches > 0 &&
-                <Stat label="branches" value={metrics.totalBranches} />}
-              {metrics && metrics.totalTries > 0 &&
-                <Stat label="try"      value={metrics.totalTries} />}
-            </>
-          ) : (
-            <span className="font-mono text-xs" style={{ color: '#3d2860' }}>
-              awaiting incantation…
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {ir && ir.lineCount > 0 ? (
+              <>
+                <Stat label="nodes"    value={nodeCount} />
+                <Stat label="lines"    value={ir.lineCount} />
+                {metrics && metrics.totalLoops > 0 &&
+                  <Stat label="loops"    value={metrics.totalLoops} />}
+                {metrics && metrics.totalBranches > 0 &&
+                  <Stat label="branches" value={metrics.totalBranches} />}
+                {metrics && metrics.totalTries > 0 &&
+                  <Stat label="try"      value={metrics.totalTries} />}
+              </>
+            ) : (
+              <span className="font-mono text-xs" style={{ color: '#3d2860' }}>
+                awaiting incantation…
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setShowLabels(!showLabels)}
+            className="font-mono text-xs px-2 py-1 rounded cursor-pointer"
+            style={{
+              background: showLabels ? '#1e0a3e' : '#0d0820',
+              border: '1px solid #4a2080',
+              color: showLabels ? '#c084fc' : '#4a2880',
+            }}
+            title={showLabels ? 'Hide labels (hover to reveal)' : 'Show all labels'}
+          >
+            {showLabels ? 'Aa' : 'Aa'}
+          </button>
         </div>
         <div className="flex-1 min-h-0">
-          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} subCircles={subCircles} />
+          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} subCircles={subCircles} inscribedShapes={inscribedShapes} satelliteCircles={satelliteCircles} showLabels={showLabels} />
         </div>
       </div>
     </div>

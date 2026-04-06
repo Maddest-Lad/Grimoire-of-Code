@@ -1,7 +1,124 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { LaidOutNode } from '../../types/ir';
 import { NODE_COLORS, CX, CY, classifyImport, importColor } from './constants';
 import { LoopArcs } from './LoopArcs';
+
+// ─── Micro magic circle internals for function/method glyphs ─────────────────
+
+function InternalRings({ nx, ny, r, count }: {
+  nx: number; ny: number; r: number; count: number;
+}) {
+  const capped = Math.min(count, 3);
+  if (capped <= 0) return null;
+  return (
+    <>
+      {Array.from({ length: capped }, (_, i) => {
+        const ringR = r * (0.35 + i * 0.2);
+        return (
+          <circle key={i}
+            cx={nx} cy={ny} r={ringR}
+            fill="none" stroke="#a855f7" strokeWidth={0.4}
+            opacity={0.3 + i * 0.08}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function MicroSpokes({ nx, ny, r, count, color }: {
+  nx: number; ny: number; r: number; count: number; color: string;
+}) {
+  const capped = Math.min(count, 6);
+  if (capped <= 0) return null;
+  const innerR = r * 0.2;
+  const outerR = r * 0.85;
+  return (
+    <>
+      {Array.from({ length: capped }, (_, i) => {
+        const a = (i / capped) * 2 * Math.PI - Math.PI / 2;
+        return (
+          <line key={i}
+            x1={nx + innerR * Math.cos(a)} y1={ny + innerR * Math.sin(a)}
+            x2={nx + outerR * Math.cos(a)} y2={ny + outerR * Math.sin(a)}
+            stroke={color} strokeWidth={0.4} opacity={0.35}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function CenterPolygon({ nx, ny, r, paramCount, color }: {
+  nx: number; ny: number; r: number; paramCount: number; color: string;
+}) {
+  if (paramCount < 3) return null;
+  const n = Math.min(paramCount, 6);
+  const polyR = r * 0.3;
+  const pts = Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * 2 * Math.PI - Math.PI / 2;
+    return `${nx + polyR * Math.cos(a)},${ny + polyR * Math.sin(a)}`;
+  });
+  return (
+    <polygon
+      points={pts.join(' ')}
+      fill="none" stroke={color} strokeWidth={0.5} opacity={0.4}
+    />
+  );
+}
+
+function FunctionGlyph({ nx, ny, r, colors, node }: {
+  nx: number; ny: number; r: number;
+  colors: { fill: string; stroke: string };
+  node: { loopCount: number; branchCount: number; paramCount: number; nestingDepth: number };
+}) {
+  const hasDetail = r >= 10;
+  const detailOpacity = hasDetail ? Math.min(0.3 + node.nestingDepth * 0.15, 0.9) : 0;
+
+  return (
+    <>
+      <circle cx={nx} cy={ny} r={r}
+        fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
+        filter="url(#glow)" />
+      {/* Center dot */}
+      <circle cx={nx} cy={ny} r={hasDetail ? 1.8 : 2.5} fill={colors.stroke} opacity={0.8} />
+      {/* Internal detail for larger nodes */}
+      {hasDetail && (
+        <g opacity={detailOpacity}>
+          <InternalRings nx={nx} ny={ny} r={r} count={node.loopCount} />
+          <MicroSpokes nx={nx} ny={ny} r={r} count={node.branchCount} color={colors.stroke} />
+          <CenterPolygon nx={nx} ny={ny} r={r} paramCount={node.paramCount} color={colors.stroke} />
+        </g>
+      )}
+    </>
+  );
+}
+
+function MethodGlyph({ nx, ny, r, colors, node }: {
+  nx: number; ny: number; r: number;
+  colors: { fill: string; stroke: string };
+  node: { loopCount: number; branchCount: number; paramCount: number; nestingDepth: number };
+}) {
+  const hasDetail = r >= 10;
+  const detailOpacity = hasDetail ? Math.min(0.3 + node.nestingDepth * 0.15, 0.9) : 0;
+
+  return (
+    <>
+      <polygon
+        points={`${nx},${ny - r} ${nx + r},${ny} ${nx},${ny + r} ${nx - r},${ny}`}
+        fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
+        filter="url(#glow)"
+      />
+      {hasDetail && (
+        <g opacity={detailOpacity}>
+          <InternalRings nx={nx} ny={ny} r={r * 0.7} count={node.loopCount} />
+          <MicroSpokes nx={nx} ny={ny} r={r * 0.7} count={node.branchCount} color={colors.stroke} />
+        </g>
+      )}
+    </>
+  );
+}
 
 // ─── Type-specific glyphs ────────────────────────────────────────────────────
 
@@ -195,9 +312,12 @@ interface Props {
   index: number;
   /** Set of "nodeId:type" keys — skip inline decoration when sub-circle exists */
   suppressedDecorations?: Set<string>;
+  /** Whether labels are always visible (false = hover-only) */
+  showLabels?: boolean;
 }
 
-export function NodeChip({ node, index, suppressedDecorations }: Props) {
+export function NodeChip({ node, index, suppressedDecorations, showLabels = true }: Props) {
+  const [hovered, setHovered] = useState(false);
   const colors = NODE_COLORS[node.type];
   const { x: nx, y: ny } = node;
   const r = node.radius;
@@ -206,9 +326,11 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
   const suppressBranch = suppressedDecorations?.has(`${node.id}:branch`);
   const suppressTry    = suppressedDecorations?.has(`${node.id}:try`);
 
+  const labelVisible = showLabels || hovered;
+
   return (
     <motion.g
-      style={{ transformBox: 'view-box', transformOrigin: `${nx}px ${ny}px` }}
+      style={{ transformBox: 'view-box', transformOrigin: `${nx}px ${ny}px`, cursor: 'pointer' }}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       exit={{ scale: 0, opacity: 0 }}
@@ -218,6 +340,8 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
         damping: 18,
         delay: index * 0.04 + 0.5,
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {/* ── Recursion outer halo ── */}
       {node.isRecursive && (
@@ -253,20 +377,13 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
           fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
           filter="url(#glow)" />
       ) : node.type === 'method' ? (
-        <polygon
-          points={`${nx},${ny - r} ${nx + r},${ny} ${nx},${ny + r} ${nx - r},${ny}`}
-          fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
-          filter="url(#glow)"
-        />
+        <MethodGlyph nx={nx} ny={ny} r={r} colors={colors} node={node} />
+      ) : node.type === 'function' ? (
+        <FunctionGlyph nx={nx} ny={ny} r={r} colors={colors} node={node} />
       ) : (
-        <>
-          <circle cx={nx} cy={ny} r={r}
-            fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
-            filter="url(#glow)" />
-          {node.type === 'function' && (
-            <circle cx={nx} cy={ny} r={2.5} fill={colors.stroke} opacity={0.8} />
-          )}
-        </>
+        <circle cx={nx} cy={ny} r={r}
+          fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
+          filter="url(#glow)" />
       )}
 
       {/* ── Try/catch fracture mark — suppressed when sub-circle exists ── */}
@@ -281,8 +398,13 @@ export function NodeChip({ node, index, suppressedDecorations }: Props) {
       <ParamDots nx={nx} ny={ny} r={r} count={node.paramCount} />
 
 
-      {/* ── Label ── */}
-      <NodeLabel node={node} nx={nx} ny={ny} r={r} />
+      {/* ── Label (always-on or hover-only) ── */}
+      {labelVisible && <NodeLabel node={node} nx={nx} ny={ny} r={r} />}
+
+      {/* Invisible hit area for hover (larger than the visible glyph) */}
+      {!showLabels && (
+        <circle cx={nx} cy={ny} r={Math.max(r + 6, 12)} fill="transparent" />
+      )}
     </motion.g>
   );
 }

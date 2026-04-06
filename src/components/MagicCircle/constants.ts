@@ -1,8 +1,8 @@
 import type { LaidOutNode, NodeType } from '../../types/ir';
 import { djb2 } from '../../lib/runes';
 
-export const CX = 300;
-export const CY = 300;
+export const CX = 450;
+export const CY = 450;
 
 export const NODE_COLORS: Record<NodeType, { fill: string; stroke: string }> = {
   module:   { fill: '#1a0a2e', stroke: '#c084fc' },
@@ -61,6 +61,15 @@ export function makeStarPath(pts: Array<{ x: number; y: number }>): string {
 export interface Edge {
   id: string;
   path: string;
+  /** 1 = normal, higher = more important (more callers targeting this node) */
+  importance: number;
+}
+
+export interface NexusPoint {
+  x: number;
+  y: number;
+  /** Number of incoming edges */
+  incomingCount: number;
 }
 
 export function flattenNodes(root: LaidOutNode): LaidOutNode[] {
@@ -111,10 +120,25 @@ export function importColor(name: string, category: ImportCategory): string {
   }
 }
 
+/**
+ * Build call edges with importance scoring.
+ * Uses center-pulled bezier curves (reliable) with arc-routed paths only for
+ * moderate angular separations where they look clean.
+ */
 export function buildEdges(nodes: LaidOutNode[]): Edge[] {
   const idToNode = new Map(nodes.map((n) => [n.id, n]));
   const edges: Edge[] = [];
   const seen = new Set<string>();
+
+  // Count incoming edges per node for importance scoring
+  const incomingCount = new Map<string, number>();
+  for (const node of nodes) {
+    for (const callId of node.calls) {
+      incomingCount.set(callId, (incomingCount.get(callId) ?? 0) + 1);
+    }
+  }
+
+  const ROUTE_R = 145;
 
   for (const node of nodes) {
     for (const callId of node.calls) {
@@ -124,16 +148,69 @@ export function buildEdges(nodes: LaidOutNode[]): Edge[] {
       if (seen.has(key)) continue;
       seen.add(key);
 
-      const mx = (node.x + target.x) / 2;
-      const my = (node.y + target.y) / 2;
-      const cpx = mx + (CX - mx) * 0.55;
-      const cpy = my + (CY - my) * 0.55;
+      const importance = Math.max(incomingCount.get(callId) ?? 1, incomingCount.get(node.id) ?? 1);
+
+      // Compute angular separation
+      const srcAngle = Math.atan2(node.y - CY, node.x - CX);
+      const tgtAngle = Math.atan2(target.y - CY, target.x - CX);
+      let angleDiff = tgtAngle - srcAngle;
+      while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+      while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+      const angularDist = Math.abs(angleDiff);
+
+      let path: string;
+
+      // Only use arc routing for moderate angular separations (PI/6 to PI/2)
+      // where it creates a clean visible arc. Otherwise use center-pulled bezier.
+      if (angularDist > Math.PI / 6 && angularDist < Math.PI / 2) {
+        const rp1x = CX + ROUTE_R * Math.cos(srcAngle);
+        const rp1y = CY + ROUTE_R * Math.sin(srcAngle);
+        const rp2x = CX + ROUTE_R * Math.cos(tgtAngle);
+        const rp2y = CY + ROUTE_R * Math.sin(tgtAngle);
+        const sweepFlag = angleDiff > 0 ? 1 : 0;
+
+        path = [
+          `M ${node.x} ${node.y}`,
+          `L ${rp1x} ${rp1y}`,
+          `A ${ROUTE_R} ${ROUTE_R} 0 0 ${sweepFlag} ${rp2x} ${rp2y}`,
+          `L ${target.x} ${target.y}`,
+        ].join(' ');
+      } else {
+        // Center-pulled quadratic bezier (original approach, always reliable)
+        const mx = (node.x + target.x) / 2;
+        const my = (node.y + target.y) / 2;
+        const cpx = mx + (CX - mx) * 0.55;
+        const cpy = my + (CY - my) * 0.55;
+        path = `M ${node.x} ${node.y} Q ${cpx} ${cpy} ${target.x} ${target.y}`;
+      }
 
       edges.push({
         id: `e-${node.id}-${callId}`,
-        path: `M ${node.x} ${node.y} Q ${cpx} ${cpy} ${target.x} ${target.y}`,
+        path,
+        importance,
       });
     }
   }
   return edges;
+}
+
+/** Find nodes with 3+ incoming call edges for nexus point rendering */
+export function findNexusPoints(nodes: LaidOutNode[]): NexusPoint[] {
+  const incomingCount = new Map<string, number>();
+  const idToNode = new Map(nodes.map((n) => [n.id, n]));
+
+  for (const node of nodes) {
+    for (const callId of node.calls) {
+      incomingCount.set(callId, (incomingCount.get(callId) ?? 0) + 1);
+    }
+  }
+
+  const points: NexusPoint[] = [];
+  for (const [id, count] of incomingCount) {
+    if (count >= 3) {
+      const node = idToNode.get(id);
+      if (node) points.push({ x: node.x, y: node.y, incomingCount: count });
+    }
+  }
+  return points;
 }

@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { LaidOutNode, ModuleMetrics, Language, SubCircle } from '../../types/ir';
+import type { LaidOutNode, ModuleMetrics, Language, SubCircle, InscribedShape, SatelliteCircle } from '../../types/ir';
 import { BANDS } from '../../lib/layout';
-import { flattenNodes, buildEdges, CX, CY } from './constants';
+import { generateSemanticBand } from '../../lib/runes';
+import { flattenNodes, buildEdges, findNexusPoints, CX, CY } from './constants';
 
 import { Background }       from './Background';
 import { RuneBand }         from './RuneBand';
@@ -15,27 +16,52 @@ import { CallEdges }        from './CallEdges';
 import { IdleCircle }       from './IdleCircle';
 import { ParentOrbitRing }  from './ParentOrbitRing';
 import { SubCircleLayer }   from './SubCircleLayer';
+import { SectorDividers }       from './SectorDividers';
+import { SatelliteCircleLayer } from './SatelliteCircleLayer';
 
 interface MagicCircleProps {
   layout: LaidOutNode | null;
   metrics: ModuleMetrics | null;
   language: Language;
   subCircles: SubCircle[];
+  inscribedShapes: InscribedShape[];
+  satelliteCircles: SatelliteCircle[];
+  showLabels: boolean;
 }
 
-export function MagicCircle({ layout, metrics, language, subCircles }: MagicCircleProps) {
+export function MagicCircle({ layout, metrics, language, subCircles, inscribedShapes, satelliteCircles, showLabels }: MagicCircleProps) {
   const allNodes = useMemo(() => (layout ? flattenNodes(layout) : []), [layout]);
-  const edges    = useMemo(() => buildEdges(allNodes), [allNodes]);
+  const edges       = useMemo(() => buildEdges(allNodes), [allNodes]);
+  const nexusPoints = useMemo(() => findNexusPoints(allNodes), [allNodes]);
   const depth1Nodes = useMemo(() => allNodes.filter((n) => n.depth === 1), [allNodes]);
 
+  // Semantic rune bands: inner = functions/methods, outer = imports
+  const innerBandText = useMemo(() => {
+    const funcNodes = allNodes.filter(n => n.type === 'function' || n.type === 'method' || n.type === 'class');
+    return funcNodes.length > 0
+      ? generateSemanticBand(funcNodes.map(n => ({ name: n.name, type: n.type, complexity: n.complexity })))
+      : undefined;
+  }, [allNodes]);
+
+  const outerBandText = useMemo(() => {
+    const importNodes = allNodes.filter(n => n.type === 'import' || n.type === 'variable');
+    return importNodes.length > 0
+      ? generateSemanticBand(importNodes.map(n => ({ name: n.name, type: n.type, complexity: n.complexity })))
+      : undefined;
+  }, [allNodes]);
+
   // Build a set of nodeId:type pairs for sub-circle decoration suppression
+  // Include both regular sub-circles and promoted satellite circles
   const suppressedDecorations = useMemo(() => {
     const set = new Set<string>();
     for (const sc of subCircles) {
       set.add(`${sc.parentId}:${sc.type}`);
     }
+    for (const sat of satelliteCircles) {
+      set.add(`${sat.parentId}:${sat.type}`);
+    }
     return set;
-  }, [subCircles]);
+  }, [subCircles, satelliteCircles]);
 
   if (!layout || layout.children.length === 0 || !metrics) {
     return <IdleCircle />;
@@ -47,7 +73,7 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
       style={{ background: '#080814' }}
     >
       <svg
-        viewBox="0 0 600 600"
+        viewBox="0 0 900 900"
         style={{ width: '100%', height: '100%' }}
       >
         {/* ── Shared definitions ──────────────────────────────── */}
@@ -72,8 +98,14 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
           </radialGradient>
         </defs>
 
+        {/* ── Extended background fill for full viewBox ──── */}
+        <rect x="0" y="0" width="900" height="900" fill="#080814" />
+
         {/* ── Layer 0: Background ─────────────────────────────── */}
         <Background />
+
+        {/* ── Layer 0b: Sector dividers ───────────────────────── */}
+        <SectorDividers />
 
         {/* ── Layer 1: Star polygon (inner geometric core) ────── */}
         <motion.g
@@ -81,7 +113,7 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
           animate={{ opacity: 1 }}
           transition={{ duration: 0.9, delay: 0.35 }}
         >
-          <StarPolygonLayer topLevelCount={depth1Nodes.length} />
+          <StarPolygonLayer shapes={inscribedShapes} topLevelCount={depth1Nodes.length} />
         </motion.g>
 
         {/* ── Layer 2: Radial burst ────────────────────────────── */}
@@ -109,6 +141,7 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
             color="#4a2880"
             opacity={0.55}
             letterSpacing={1.5}
+            semanticText={innerBandText}
           />
         </motion.g>
 
@@ -167,14 +200,18 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
             color="#5030a0"
             opacity={0.65}
             letterSpacing={2}
+            semanticText={outerBandText}
           />
         </motion.g>
 
         {/* ── Layer 8: Call edges with particles ──────────────── */}
-        <CallEdges edges={edges} />
+        <CallEdges edges={edges} nexusPoints={nexusPoints} />
 
-        {/* ── Layer 8b: Sub-circles (control flow satellites) ──── */}
+        {/* ── Layer 8b: Sub-circles (non-promoted control flow) ─── */}
         <SubCircleLayer subCircles={subCircles} allNodes={allNodes} />
+
+        {/* ── Layer 8c: Satellite circles (promoted control flow) ── */}
+        <SatelliteCircleLayer satellites={satelliteCircles} />
 
         {/* ── Layer 9: Satellite node chips ───────────────────── */}
         <AnimatePresence>
@@ -184,6 +221,7 @@ export function MagicCircle({ layout, metrics, language, subCircles }: MagicCirc
               node={node}
               index={i}
               suppressedDecorations={suppressedDecorations}
+              showLabels={showLabels}
             />
           ))}
         </AnimatePresence>

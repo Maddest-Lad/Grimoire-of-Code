@@ -36,15 +36,9 @@ export function CenterSigil({ topLevelCount, totalComplexity, language }: Props)
   const pulsePeriod = Math.max(2, 5 - totalComplexity * 0.07);
 
   return (
-    <motion.g
-      style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-      initial={{ scale: 0 }}
-      animate={{ scale: 1 }}
-      transition={{ duration: 0.7, type: 'spring', stiffness: 110, damping: 14 }}
-    >
+    <g>
       {/* ── Layer 1: Outer polygon + star (breathes) ─────────── */}
       <motion.g
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
         animate={{ opacity: [0.5, 0.9, 0.5] }}
         transition={{ duration: pulsePeriod, repeat: Infinity, ease: 'easeInOut' }}
       >
@@ -61,17 +55,13 @@ export function CenterSigil({ topLevelCount, totalComplexity, language }: Props)
       <circle cx={CX} cy={CY} r={44} fill="none" stroke="#5030a0" strokeWidth={1} opacity={0.55} />
       <circle cx={CX} cy={CY} r={39} fill="none" stroke="#3d1a6e" strokeWidth={0.5} opacity={0.45} />
 
-      {/* ── Layer 3: Rotating inner polygon ──────────────────── */}
-      <motion.path
-        d={innerPoly}
-        fill="none"
-        stroke="#7040b0"
-        strokeWidth={0.9}
-        opacity={0.65}
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-        animate={{ rotate: -360 }}
-        transition={{ duration: 32, repeat: Infinity, ease: 'linear' }}
-      />
+      {/* ── Layer 3: Rotating inner polygon (native SVG rotation) ── */}
+      <g>
+        <path d={innerPoly} fill="none" stroke="#7040b0" strokeWidth={0.9} opacity={0.65} />
+        <animateTransform attributeName="transform" type="rotate"
+          from={`0 ${CX} ${CY}`} to={`-360 ${CX} ${CY}`}
+          dur="32s" repeatCount="indefinite" />
+      </g>
 
       {/* ── Layer 4: Core ────────────────────────────────────── */}
       <circle cx={CX} cy={CY} r={25}
@@ -100,6 +90,6 @@ export function CenterSigil({ topLevelCount, totalComplexity, language }: Props)
       >
         {tag}
       </text>
-    </motion.g>
+    </g>
   );
 }
