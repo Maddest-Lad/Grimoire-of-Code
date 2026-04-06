@@ -21,7 +21,7 @@ const GLYPH_SET = [
 ];
 
 /** djb2-style 32-bit hash — stable across calls */
-function djb2(str: string): number {
+export function djb2(str: string): number {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
     hash = (((hash << 5) + hash) ^ str.charCodeAt(i)) >>> 0;

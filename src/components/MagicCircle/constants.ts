@@ -1,4 +1,5 @@
 import type { LaidOutNode, NodeType } from '../../types/ir';
+import { djb2 } from '../../lib/runes';
 
 export const CX = 300;
 export const CY = 300;
@@ -70,6 +71,44 @@ export function flattenNodes(root: LaidOutNode): LaidOutNode[] {
   }
   walk(root);
   return result;
+}
+
+// ─── Import classification ──────────────────────────────────────────────────
+
+export type ImportCategory = 'relative' | 'scoped' | 'stdlib' | 'package';
+
+const STDLIB_NAMES = new Set([
+  // Node.js built-ins
+  'fs', 'path', 'os', 'http', 'https', 'url', 'util', 'stream', 'events',
+  'crypto', 'net', 'dns', 'tls', 'zlib', 'readline', 'assert', 'buffer',
+  'child_process', 'cluster', 'perf_hooks', 'worker_threads', 'v8', 'vm',
+  'fs/promises', 'stream/promises',
+  // Python built-ins
+  'os', 'sys', 'io', 'math', 'json', 'datetime', 're', 'typing', 'pathlib',
+  'collections', 'functools', 'itertools', 'copy', 'hashlib', 'base64',
+  'logging', 'subprocess', 'threading', 'multiprocessing', 'socket', 'http',
+  'urllib', 'tempfile', 'mimetypes', 'uuid', 'time', 'random', 'struct',
+  'abc', 'dataclasses', 'enum', 'contextlib', 'asyncio', 'concurrent',
+]);
+
+export function classifyImport(name: string): ImportCategory {
+  if (name.startsWith('./') || name.startsWith('../') || name.startsWith('.')) return 'relative';
+  if (name.startsWith('@')) return 'scoped';
+  // Check base name (before any /)
+  const base = name.split('/')[0];
+  if (STDLIB_NAMES.has(base) || STDLIB_NAMES.has(name)) return 'stdlib';
+  return 'package';
+}
+
+const IMPORT_PALETTE = ['#34d399', '#2dd4bf', '#6ee7b7', '#5eead4', '#a7f3d0'];
+
+export function importColor(name: string, category: ImportCategory): string {
+  switch (category) {
+    case 'relative': return '#a78bfa';
+    case 'scoped':   return '#2dd4bf';
+    case 'stdlib':   return '#34d399';
+    case 'package':  return IMPORT_PALETTE[djb2(name) % IMPORT_PALETTE.length];
+  }
 }
 
 export function buildEdges(nodes: LaidOutNode[]): Edge[] {

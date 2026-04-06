@@ -45,6 +45,8 @@ export interface LaidOutNode {
   depth: number;
   /** Radius of the orbital ring this node sits on */
   orbitRadius: number;
+  /** For parent nodes: radius of the mini-orbit their children sit on */
+  localOrbitRadius?: number;
   /** IDs of called nodes (resolved from names) */
   calls: string[];
   complexity: number;
@@ -56,6 +58,23 @@ export interface LaidOutNode {
   returnCount: number;
   paramCount: number;
   nestingDepth: number;
+}
+
+/** A satellite sub-circle representing control flow attached to a node */
+export interface SubCircle {
+  type: 'loop' | 'branch' | 'try';
+  /** SVG center x */
+  cx: number;
+  /** SVG center y */
+  cy: number;
+  /** Visual radius (10-24) */
+  radius: number;
+  /** The raw count (loopCount, branchCount, or tryCount) */
+  count: number;
+  /** ID of the parent node this sub-circle belongs to */
+  parentId: string;
+  /** Placement angle from parent (radians) */
+  angle: number;
 }
 
 export interface ModuleMetrics {

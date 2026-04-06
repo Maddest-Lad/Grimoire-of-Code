@@ -79,8 +79,9 @@ export default function App() {
     return computeLayout(ir);
   }, [ir]);
 
-  const layout  = layoutResult?.root   ?? null;
-  const metrics = layoutResult?.metrics ?? null;
+  const layout     = layoutResult?.root       ?? null;
+  const metrics    = layoutResult?.metrics    ?? null;
+  const subCircles = layoutResult?.subCircles ?? [];
 
   const nodeCount = useMemo(() => (ir ? countNodes(ir) - 1 : 0), [ir]);
 
@@ -136,7 +137,7 @@ export default function App() {
           )}
         </div>
         <div className="flex-1 min-h-0">
-          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} />
+          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} subCircles={subCircles} />
         </div>
       </div>
     </div>

@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
 import type { LaidOutNode } from '../../types/ir';
-import { NODE_COLORS, CX, CY } from './constants';
+import { NODE_COLORS, CX, CY, classifyImport, importColor } from './constants';
 import { LoopArcs } from './LoopArcs';
 
-// ─── Type-specific glyph ─────────────────────────────────────────────────────
+// ─── Type-specific glyphs ────────────────────────────────────────────────────
 
 function ClassGlyph({ nx, ny, r, colors, methodCount }: {
   nx: number; ny: number; r: number;
@@ -34,24 +34,65 @@ function ClassGlyph({ nx, ny, r, colors, methodCount }: {
   );
 }
 
-function ImportGlyph({ nx, ny, r, colors }: {
-  nx: number; ny: number; r: number;
-  colors: { fill: string; stroke: string };
+function ImportGlyph({ nx, ny, r, name }: {
+  nx: number; ny: number; r: number; name: string;
 }) {
+  const category = classifyImport(name);
+  const color = importColor(name, category);
+  const fill = category === 'relative' ? '#1a1030' : category === 'scoped' ? '#0e2028' : '#0e2820';
+
   const dx = nx - CX, dy = ny - CY;
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ox = dx / dist, oy = dy / dist; // outward unit vector
-  const px = -oy,       py = ox;        // perpendicular
+  const ox = dx / dist, oy = dy / dist;
+  const px = -oy, py = ox;
 
-  const tip = { x: nx + ox * r,            y: ny + oy * r };
+  if (category === 'relative') {
+    // Inward-pointing arrow (small, muted)
+    const tip = { x: nx - ox * r * 0.8, y: ny - oy * r * 0.8 };
+    const b1  = { x: nx + ox * r * 0.5 + px * r * 0.65, y: ny + oy * r * 0.5 + py * r * 0.65 };
+    const b2  = { x: nx + ox * r * 0.5 - px * r * 0.65, y: ny + oy * r * 0.5 - py * r * 0.65 };
+    return (
+      <polygon
+        points={`${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`}
+        fill={fill} stroke={color} strokeWidth={1.2} filter="url(#glow)"
+      />
+    );
+  }
+
+  if (category === 'scoped') {
+    // Pentagon
+    const pts = Array.from({ length: 5 }, (_, i) => {
+      const a = (i / 5) * 2 * Math.PI - Math.PI / 2;
+      return `${nx + r * Math.cos(a)},${ny + r * Math.sin(a)}`;
+    });
+    return (
+      <polygon
+        points={pts.join(' ')}
+        fill={fill} stroke={color} strokeWidth={1.3} filter="url(#glow)"
+      />
+    );
+  }
+
+  if (category === 'stdlib') {
+    // Rounded square
+    const half = r * 0.85;
+    return (
+      <rect
+        x={nx - half} y={ny - half} width={half * 2} height={half * 2}
+        rx={3} ry={3}
+        fill={fill} stroke={color} strokeWidth={1.3} filter="url(#glow)"
+      />
+    );
+  }
+
+  // Package: outward triangle (default)
+  const tip = { x: nx + ox * r, y: ny + oy * r };
   const b1  = { x: nx - ox * r * 0.5 + px * r * 0.75, y: ny - oy * r * 0.5 + py * r * 0.75 };
   const b2  = { x: nx - ox * r * 0.5 - px * r * 0.75, y: ny - oy * r * 0.5 - py * r * 0.75 };
-
   return (
     <polygon
       points={`${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`}
-      fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
-      filter="url(#glow)"
+      fill={fill} stroke={color} strokeWidth={1.5} filter="url(#glow)"
     />
   );
 }
@@ -130,7 +171,7 @@ function NodeLabel({ node, nx, ny, r }: {
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   const lx   = nx + (dx / dist) * (r + 12);
   const ly   = ny + (dy / dist) * (r + 12);
-  const label = node.name.length > 14 ? node.name.slice(0, 13) + '…' : node.name;
+  const label = node.name.length > 14 ? node.name.slice(0, 13) + '\u2026' : node.name;
 
   return (
     <text
@@ -149,14 +190,22 @@ function NodeLabel({ node, nx, ny, r }: {
 
 // ─── Main NodeChip component ──────────────────────────────────────────────────
 
-interface Props { node: LaidOutNode; index: number }
+interface Props {
+  node: LaidOutNode;
+  index: number;
+  /** Set of "nodeId:type" keys — skip inline decoration when sub-circle exists */
+  suppressedDecorations?: Set<string>;
+}
 
-export function NodeChip({ node, index }: Props) {
+export function NodeChip({ node, index, suppressedDecorations }: Props) {
   const colors = NODE_COLORS[node.type];
   const { x: nx, y: ny } = node;
   const r = node.radius;
 
-  // Pulse period inversely scales with complexity (complex = faster pulse)
+  const suppressLoop   = suppressedDecorations?.has(`${node.id}:loop`);
+  const suppressBranch = suppressedDecorations?.has(`${node.id}:branch`);
+  const suppressTry    = suppressedDecorations?.has(`${node.id}:try`);
+
   const pulsePeriod = Math.max(1.4, 5.5 - node.complexity * 0.18);
   const pulseScale  = 1 + Math.min(node.complexity * 0.015, 0.12);
 
@@ -185,21 +234,23 @@ export function NodeChip({ node, index }: Props) {
         </>
       )}
 
-      {/* ── Loop arcs (rotating) ── */}
-      <LoopArcs
-        count={node.loopCount}
-        nodeRadius={r}
-        color={colors.stroke}
-        nx={nx}
-        ny={ny}
-      />
+      {/* ── Loop arcs (rotating) — suppressed when sub-circle exists ── */}
+      {!suppressLoop && (
+        <LoopArcs
+          count={node.loopCount}
+          nodeRadius={r}
+          color={colors.stroke}
+          nx={nx}
+          ny={ny}
+        />
+      )}
 
       {/* ── Main glyph ── */}
       {node.type === 'class' ? (
         <ClassGlyph nx={nx} ny={ny} r={r} colors={colors}
           methodCount={node.children.filter(c => c.type === 'method').length} />
       ) : node.type === 'import' ? (
-        <ImportGlyph nx={nx} ny={ny} r={r} colors={colors} />
+        <ImportGlyph nx={nx} ny={ny} r={r} name={node.name} />
       ) : node.type === 'variable' ? (
         <rect x={nx - r} y={ny - r} width={r * 2} height={r * 2}
           fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5}
@@ -221,11 +272,13 @@ export function NodeChip({ node, index }: Props) {
         </>
       )}
 
-      {/* ── Try/catch fracture mark ── */}
-      {node.tryCount > 0 && <TryFracture nx={nx} ny={ny} r={r} />}
+      {/* ── Try/catch fracture mark — suppressed when sub-circle exists ── */}
+      {node.tryCount > 0 && !suppressTry && <TryFracture nx={nx} ny={ny} r={r} />}
 
-      {/* ── Branch dots (above) ── */}
-      <BranchDots nx={nx} ny={ny} r={r} count={node.branchCount} color={colors.stroke} />
+      {/* ── Branch dots (above) — suppressed when sub-circle exists ── */}
+      {!suppressBranch && (
+        <BranchDots nx={nx} ny={ny} r={r} count={node.branchCount} color={colors.stroke} />
+      )}
 
       {/* ── Param dots (below) ── */}
       <ParamDots nx={nx} ny={ny} r={r} count={node.paramCount} />

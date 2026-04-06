@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { LaidOutNode, ModuleMetrics, Language } from '../../types/ir';
+import type { LaidOutNode, ModuleMetrics, Language, SubCircle } from '../../types/ir';
 import { BANDS } from '../../lib/layout';
 import { flattenNodes, buildEdges, CX, CY } from './constants';
 
@@ -13,23 +13,33 @@ import { CenterSigil }      from './CenterSigil';
 import { NodeChip }         from './NodeChip';
 import { CallEdges }        from './CallEdges';
 import { IdleCircle }       from './IdleCircle';
+import { ParentOrbitRing }  from './ParentOrbitRing';
+import { SubCircleLayer }   from './SubCircleLayer';
 
 interface MagicCircleProps {
   layout: LaidOutNode | null;
   metrics: ModuleMetrics | null;
   language: Language;
+  subCircles: SubCircle[];
 }
 
-export function MagicCircle({ layout, metrics, language }: MagicCircleProps) {
+export function MagicCircle({ layout, metrics, language, subCircles }: MagicCircleProps) {
   const allNodes = useMemo(() => (layout ? flattenNodes(layout) : []), [layout]);
   const edges    = useMemo(() => buildEdges(allNodes), [allNodes]);
   const depth1Nodes = useMemo(() => allNodes.filter((n) => n.depth === 1), [allNodes]);
 
+  // Build a set of nodeId:type pairs for sub-circle decoration suppression
+  const suppressedDecorations = useMemo(() => {
+    const set = new Set<string>();
+    for (const sc of subCircles) {
+      set.add(`${sc.parentId}:${sc.type}`);
+    }
+    return set;
+  }, [subCircles]);
+
   if (!layout || layout.children.length === 0 || !metrics) {
     return <IdleCircle />;
   }
-
-  const orbitDepths = [1, 2, 3] as const;
 
   return (
     <div
@@ -102,26 +112,29 @@ export function MagicCircle({ layout, metrics, language }: MagicCircleProps) {
           />
         </motion.g>
 
-        {/* ── Layer 4: Orbital dashed rings ───────────────────── */}
-        {orbitDepths.map((depth) => {
-          const r = [0, BANDS.nodeOrbit.radius, BANDS.methodOrbit.radius, 284][depth];
-          const dashes = ['', '4 10', '3 7', '2 5'][depth];
-          const op = 0.55 - depth * 0.07;
-          const offset = depth % 2 === 0 ? -80 : 100;
-          return (
-            <motion.circle
-              key={depth}
-              cx={CX} cy={CY} r={r}
-              fill="none"
-              stroke="#4a2080"
-              strokeWidth={depth === 1 ? 1 : 0.75}
-              strokeDasharray={dashes}
-              opacity={op}
-              animate={{ strokeDashoffset: [0, offset] }}
-              transition={{ duration: 10 + depth * 6, repeat: Infinity, ease: 'linear' }}
+        {/* ── Layer 4: Main orbital ring (depth-1) ────────────── */}
+        <motion.circle
+          cx={CX} cy={CY} r={BANDS.nodeOrbit.radius}
+          fill="none"
+          stroke="#4a2080"
+          strokeWidth={1}
+          strokeDasharray="4 10"
+          opacity={0.48}
+          animate={{ strokeDashoffset: [0, 100] }}
+          transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+        />
+
+        {/* ── Layer 4b: Parent orbit rings (depth-2 mini-orbits) ─ */}
+        {depth1Nodes
+          .filter((n) => n.localOrbitRadius != null && n.children.length > 0)
+          .map((node) => (
+            <ParentOrbitRing
+              key={`orbit-${node.id}`}
+              cx={node.x}
+              cy={node.y}
+              radius={node.localOrbitRadius!}
             />
-          );
-        })}
+          ))}
 
         {/* ── Layer 5: Stability ring ──────────────────────────── */}
         <StabilityRing metrics={metrics} />
@@ -160,10 +173,18 @@ export function MagicCircle({ layout, metrics, language }: MagicCircleProps) {
         {/* ── Layer 8: Call edges with particles ──────────────── */}
         <CallEdges edges={edges} />
 
+        {/* ── Layer 8b: Sub-circles (control flow satellites) ──── */}
+        <SubCircleLayer subCircles={subCircles} allNodes={allNodes} />
+
         {/* ── Layer 9: Satellite node chips ───────────────────── */}
         <AnimatePresence>
           {allNodes.map((node, i) => (
-            <NodeChip key={node.id} node={node} index={i} />
+            <NodeChip
+              key={node.id}
+              node={node}
+              index={i}
+              suppressedDecorations={suppressedDecorations}
+            />
           ))}
         </AnimatePresence>
 
