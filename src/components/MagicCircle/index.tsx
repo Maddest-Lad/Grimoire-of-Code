@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, type RefObject } from 'react';
 import { motion } from 'framer-motion';
 import type { LaidOutNode, ModuleMetrics, Language, SubCircle, InscribedShape, SatelliteCircle } from '../../types/ir';
 import { BANDS } from '../../lib/layout';
@@ -27,9 +27,11 @@ interface MagicCircleProps {
   inscribedShapes: InscribedShape[];
   satelliteCircles: SatelliteCircle[];
   showLabels: boolean;
+  animationsEnabled: boolean;
+  svgRef?: RefObject<SVGSVGElement>;
 }
 
-export function MagicCircle({ layout, metrics, language, subCircles, inscribedShapes, satelliteCircles, showLabels }: MagicCircleProps) {
+export function MagicCircle({ layout, metrics, language, subCircles, inscribedShapes, satelliteCircles, showLabels, animationsEnabled, svgRef }: MagicCircleProps) {
   const allNodes = useMemo(() => (layout ? flattenNodes(layout) : []), [layout]);
   const edges       = useMemo(() => buildEdges(allNodes), [allNodes]);
   const nexusPoints = useMemo(() => findNexusPoints(allNodes), [allNodes]);
@@ -63,6 +65,17 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
     return set;
   }, [subCircles, satelliteCircles]);
 
+  // Pause / resume all SMIL animations when the toggle changes
+  useEffect(() => {
+    const svg = svgRef?.current;
+    if (!svg) return;
+    if (animationsEnabled) {
+      svg.unpauseAnimations();
+    } else {
+      svg.pauseAnimations();
+    }
+  }, [animationsEnabled, svgRef]);
+
   if (!layout || layout.children.length === 0 || !metrics) {
     return <IdleCircle />;
   }
@@ -73,6 +86,7 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
       style={{ background: '#080814' }}
     >
       <svg
+        ref={svgRef}
         viewBox="0 0 900 900"
         style={{ width: '100%', height: '100%' }}
       >
@@ -159,8 +173,10 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
           strokeWidth={1}
           strokeDasharray="4 10"
           opacity={0.48}
-          animate={{ strokeDashoffset: [0, 100] }}
-          transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+          animate={animationsEnabled ? { strokeDashoffset: [0, 100] } : { strokeDashoffset: 0 }}
+          transition={animationsEnabled
+            ? { duration: 16, repeat: Infinity, ease: 'linear' }
+            : { duration: 0 }}
         />
 
         {/* ── Layer 4b: Parent orbit rings (depth-2 mini-orbits) ─ */}
@@ -172,6 +188,7 @@ export function MagicCircle({ layout, metrics, language, subCircles, inscribedSh
               cx={node.x}
               cy={node.y}
               radius={node.localOrbitRadius!}
+              animationsEnabled={animationsEnabled}
             />
           ))}
 

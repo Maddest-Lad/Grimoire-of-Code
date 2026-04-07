@@ -90,16 +90,20 @@ interface StoreState {
   code: string;
   selectedLanguage: Language | 'auto';
   showLabels: boolean;
+  animationsEnabled: boolean;
   setCode: (code: string) => void;
   setSelectedLanguage: (lang: Language | 'auto') => void;
   setShowLabels: (show: boolean) => void;
+  setAnimationsEnabled: (enabled: boolean) => void;
 }
 
 export const useStore = create<StoreState>((set) => ({
   code: DEFAULT_CODE,
   selectedLanguage: 'auto',
   showLabels: true,
+  animationsEnabled: true,
   setCode: (code) => set({ code }),
   setSelectedLanguage: (lang) => set({ selectedLanguage: lang }),
   setShowLabels: (show) => set({ showLabels: show }),
+  setAnimationsEnabled: (enabled) => set({ animationsEnabled: enabled }),
 }));

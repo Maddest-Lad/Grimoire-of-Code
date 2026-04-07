@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore } from './store/useStore';
 import { detectLanguage } from './lib/detect';
 import { parseCode } from './lib/parser';
 import { computeLayout } from './lib/layout';
+import { downloadGif } from './lib/gifCapture';
 import { Editor } from './components/Editor';
 import { MagicCircle } from './components/MagicCircle';
 import type { IRNode, Language } from './types/ir';
@@ -62,7 +63,10 @@ function LanguageSelector({ selected, detected, onChange }: LangSelectorProps) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { code, selectedLanguage, showLabels, setCode, setSelectedLanguage, setShowLabels } = useStore();
+  const { code, selectedLanguage, showLabels, animationsEnabled, setCode, setSelectedLanguage, setShowLabels, setAnimationsEnabled } = useStore();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [captureProgress, setCaptureProgress] = useState(0);
 
   const effectiveLanguage = useMemo<Language>(() => {
     if (selectedLanguage !== 'auto') return selectedLanguage;
@@ -86,6 +90,18 @@ export default function App() {
   const satelliteCircles = layoutResult?.satelliteCircles ?? [];
 
   const nodeCount = useMemo(() => (ir ? countNodes(ir) - 1 : 0), [ir]);
+
+  async function handleDownloadGif() {
+    if (!svgRef.current || isCapturing) return;
+    setIsCapturing(true);
+    setCaptureProgress(0);
+    try {
+      await downloadGif(svgRef.current, setCaptureProgress);
+    } finally {
+      setIsCapturing(false);
+      setCaptureProgress(0);
+    }
+  }
 
   return (
     <div
@@ -139,21 +155,50 @@ export default function App() {
               </span>
             )}
           </div>
-          <button
-            onClick={() => setShowLabels(!showLabels)}
-            className="font-mono text-xs px-2 py-1 rounded cursor-pointer"
-            style={{
-              background: showLabels ? '#1e0a3e' : '#0d0820',
-              border: '1px solid #4a2080',
-              color: showLabels ? '#c084fc' : '#4a2880',
-            }}
-            title={showLabels ? 'Hide labels (hover to reveal)' : 'Show all labels'}
-          >
-            {showLabels ? 'Aa' : 'Aa'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAnimationsEnabled(!animationsEnabled)}
+              className="font-mono text-xs px-2 py-1 rounded cursor-pointer"
+              style={{
+                background: animationsEnabled ? '#1e0a3e' : '#0d0820',
+                border: '1px solid #4a2080',
+                color: animationsEnabled ? '#c084fc' : '#4a2880',
+              }}
+              title={animationsEnabled ? 'Pause animations' : 'Resume animations'}
+            >
+              {animationsEnabled ? '▶' : '⏸'}
+            </button>
+            <button
+              onClick={handleDownloadGif}
+              disabled={isCapturing}
+              className="font-mono text-xs px-2 py-1 rounded cursor-pointer"
+              style={{
+                background: isCapturing ? '#1e0a3e' : '#0d0820',
+                border: '1px solid #4a2080',
+                color: isCapturing ? '#c084fc' : '#4a2880',
+                opacity: isCapturing ? 0.8 : 1,
+                cursor: isCapturing ? 'wait' : 'pointer',
+              }}
+              title="Download as animated GIF (~3s capture)"
+            >
+              {isCapturing ? `◉ ${captureProgress}%` : '⬇ GIF'}
+            </button>
+            <button
+              onClick={() => setShowLabels(!showLabels)}
+              className="font-mono text-xs px-2 py-1 rounded cursor-pointer"
+              style={{
+                background: showLabels ? '#1e0a3e' : '#0d0820',
+                border: '1px solid #4a2080',
+                color: showLabels ? '#c084fc' : '#4a2880',
+              }}
+              title={showLabels ? 'Hide labels (hover to reveal)' : 'Show all labels'}
+            >
+              Aa
+            </button>
+          </div>
         </div>
         <div className="flex-1 min-h-0">
-          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} subCircles={subCircles} inscribedShapes={inscribedShapes} satelliteCircles={satelliteCircles} showLabels={showLabels} />
+          <MagicCircle layout={layout} metrics={metrics} language={effectiveLanguage} subCircles={subCircles} inscribedShapes={inscribedShapes} satelliteCircles={satelliteCircles} showLabels={showLabels} animationsEnabled={animationsEnabled} svgRef={svgRef} />
         </div>
       </div>
     </div>

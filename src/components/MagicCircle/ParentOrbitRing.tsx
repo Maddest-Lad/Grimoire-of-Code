@@ -4,13 +4,14 @@ interface Props {
   cx: number;
   cy: number;
   radius: number;
+  animationsEnabled: boolean;
 }
 
 /**
  * Mini orbit ring around a parent node that has children.
  * Renders a faint dashed circle with animated dash offset.
  */
-export function ParentOrbitRing({ cx, cy, radius }: Props) {
+export function ParentOrbitRing({ cx, cy, radius, animationsEnabled }: Props) {
   const circumference = 2 * Math.PI * radius;
   const dashLen = Math.max(3, circumference / 16);
   const gapLen = Math.max(5, circumference / 12);
@@ -26,10 +27,16 @@ export function ParentOrbitRing({ cx, cy, radius }: Props) {
       strokeDasharray={`${dashLen} ${gapLen}`}
       opacity={0.35}
       initial={{ opacity: 0 }}
-      animate={{ opacity: 0.35, strokeDashoffset: [0, circumference] }}
+      animate={
+        animationsEnabled
+          ? { opacity: 0.35, strokeDashoffset: [0, circumference] }
+          : { opacity: 0.35, strokeDashoffset: 0 }
+      }
       transition={{
         opacity: { duration: 0.8, delay: 0.6 },
-        strokeDashoffset: { duration: 18, repeat: Infinity, ease: 'linear' },
+        strokeDashoffset: animationsEnabled
+          ? { duration: 18, repeat: Infinity, ease: 'linear' }
+          : { duration: 0 },
       }}
     />
   );
